@@ -10,21 +10,21 @@ int main(int argc, char const *argv[]) {
 
 	Lexer lexer;
 
-	const char * code = "var a = 0";
-						// "print(a)";
+	const char * code = "var a = 'my_string\n"
+						"print(a)";
 
-	Tokens tokens;
+	ObjectBuffer objects;
 
 	try{
-		tokens = lexer.lex(code);
+		objects = lexer.lex(code);
 	}catch(const char * message){
 		std::cout << message << std::endl;
 	}catch(const std::string & message){
 		std::cout << message << std::endl;
 	}
 
-	for(auto t : tokens){
-		std::cout << t.type << " `" << t.value << "`; pos = " << t.line << ":" << t.column << std::endl;
+	for(auto & t : objects){
+		std::cout << t.type << " pos = " << t.line << ":" << t.column << std::endl;
 	}
 
     return 0;

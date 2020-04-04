@@ -4,23 +4,13 @@
 
 Lexer::Lexer(){
 	index = 0;
-	tokens.clear();
+	objects.clear();
 	line = 1;
 	column = 1;
 }
 
-const std::string Lexer::operators[] = {
-	"+", "-", "*", "/", "%",
-	"="
-};
-
-const std::string Lexer::keywords[] = {
-	"var"
-};
-
 char Lexer::peek(){
-	current = code[index];
-	return current;
+	return current = code[index];
 }
 
 char Lexer::advance(){
@@ -31,7 +21,7 @@ char Lexer::advance(){
 	}else{
 		column++;
 	}
-	return current;
+	return peek();
 }
 
 // Determinators
@@ -63,97 +53,87 @@ bool Lexer::is_quote(const char & c){
 	return c == '"' | c == '\'';
 }
 
-// Post Determinators
-bool Lexer::is_operator(const std::string & s){
-	for(int i = 0; i < sizeof(operators) / sizeof(operators[0]); i++){
-		if(operators[i] == s) return true;
-	}
-	return false;
-}
-
-bool Lexer::is_keyword(const std::string & s){
-	for(int i = 0; i < sizeof(keywords) / sizeof(keywords[0]); i++){
-		if(keywords[i] == s) return true;
-	}
-	return false;
-}
-
 // Errors
-void Lexer::error(const std::string & message){
-	Object::error(message +" at "+ std::to_string(line) +":"+ std::to_string(column));
-}
-
 void Lexer::unexpected_token(){
 	unexpected_token(std::to_string((char)current));
 }
-void Lexer::unexpected_token(const std::string & token){
-	error("Unexpected token `" + token + "`");
+void Lexer::unexpected_token(const std::string & val){
+	object_error("Unexpected token `" + val + "`", line, column);
 }
 
-Tokens Lexer::lex(const std::string & code){
+void Lexer::expected_token(const std::string & val){
+	object_error("Unexpected end of expression, `" + val + "` expected", line, column);
+}
+
+ObjectBuffer & Lexer::lex(const std::string & code){
 	this->code = code;
 
-	peek();
+	Object obj;
 
-	while(current){
-		Token token;
+	std::string val;
 
-		token.line = line;
-		token.column = column;
+	while(peek()){
+
+		obj.line = line;
+		obj.column = column;
+
+		val = "";
 
 		if(is_skipable(current)){
 			advance();
 			continue;
 		}else if(is_identifier_first(current)){
-			std::string iden;
 			do{
-				iden += peek();
+				val += current;
 			}while(is_identifier(advance()));
 
-			if(is_keyword(iden)){
-				token.type = Token::Type::KEYWORD;
-			}else{
-				token.type = Token::Type::IDENTIFIER;				
-			}
-			token.value = iden;
+			obj.type = IDENTIFIER;
 		}else if(is_digit(current)){
-			std::string number;
-			bool floating = false;
 			do{
-				number += current;
+				val += current;
 			}while(is_digit(advance()));
 
 			if(current == '.'){
-				number += current;
+				val += current;
 				if(!is_digit(advance())){
 					unexpected_token();
 				}
 				while(is_digit(current)){
-					number += current;
+					val += current;
 					advance();
 				}
 			}
-
-			token.type = Token::Type::NUMBER;
-			token.value = number;
-		}else if(is_punct(current)){
-			std::string op;
-			do{
-				op += peek();
-			}while(is_operator(op + advance()));
-
-			if(!is_operator(op)){
-				unexpected_token(op);
+			obj.type = NUMBER;
+		}else if(is_quote(current)){
+			const char quote = current;
+			while(advance() != quote && current && current != '\n'){
+				val += current;
 			}
+			if(!current || current != quote){
+				expected_token(std::string(1, quote));
+			}
+			advance();
+			obj.type = STRING;
+		}else if(is_punct(current)){
+			do{
+				val += current;
+			}while(is_operator(val + advance()));
 
-			token.type = Token::Type::OPERATOR;
-			token.value = op;
+			if(!is_operator(val)){
+				unexpected_token(val);
+			}
+			obj.type = OPERATOR;
 		}else{
 			unexpected_token();
 		}
 
-		tokens.push_back(token);
+		obj.set_val(val.c_str());
+
+		objects.push_back(obj);
 	}
 
-	return tokens;
+	obj.type = PROG_END;
+	objects.push_back(obj);
+
+	return objects;
 }

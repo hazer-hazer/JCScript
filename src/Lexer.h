@@ -3,28 +3,18 @@
 
 #include <vector>
 
-#include "Object.h"
-#include "Token.h"
+#include "object.h"
 
-typedef std::vector <Token> Tokens;
-
-class Lexer : public Object {
-
-	OBJ_CLASS(Lexer);
+class Lexer {
 
 	public:
 		Lexer();
 		virtual ~Lexer() = default;
 
-		Tokens lex(const std::string & code);
-
-		static const std::string operators[];
-
-		static const std::string keywords[];
-
+		ObjectBuffer & lex(const std::string & code);
 
 	private:
-		Tokens tokens;
+		ObjectBuffer objects;
 		
 		// Stream
 		std::string code;
@@ -45,17 +35,11 @@ class Lexer : public Object {
 		bool is_punct(const char & c);
 		bool is_quote(const char & c);
 
-		// Post Determinators
-		bool is_keyword(const std::string & s);
-		bool is_operator(const std::string & s);
-
 	// Errors
-	public:
-		virtual void error(const std::string & message);
-
 	private:
 		void unexpected_token();
-		void unexpected_token(const std::string & token);
+		void unexpected_token(const std::string & val);
+		void expected_token(const std::string & val);
 };
 
 #endif
