@@ -11,7 +11,7 @@ int main(int argc, char const *argv[]) {
 	Lexer lexer;
 
 	const char * code = "var a = 0";
-						"print(a)";
+						// "print(a)";
 
 	Tokens tokens;
 
@@ -24,7 +24,7 @@ int main(int argc, char const *argv[]) {
 	}
 
 	for(auto t : tokens){
-		std::cout << t.type << " " << t.value << std::endl;
+		std::cout << t.type << " `" << t.value << "`; pos = " << t.line << ":" << t.column << std::endl;
 	}
 
     return 0;

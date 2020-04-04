@@ -21,7 +21,7 @@ class Lexer : public Object {
 		static const std::string operators[];
 
 		static const std::string keywords[];
-		
+
 
 	private:
 		Tokens tokens;
@@ -29,13 +29,13 @@ class Lexer : public Object {
 		// Stream
 		std::string code;
 
-		unsigned long long index;
+		unsigned int index;
 		char current;
 		char peek();
 		char advance();
 
-		unsigned long line;
-		unsigned long column;
+		unsigned int line;
+		unsigned int column;
 
 		// Determinators
 		bool is_skipable(const char & c);

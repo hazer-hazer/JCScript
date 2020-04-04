@@ -20,20 +20,18 @@ const std::string Lexer::keywords[] = {
 
 char Lexer::peek(){
 	current = code[index];
-	
-	if(current == '\n'){
-		line++;
-		column = 1;
-	}else{
-		column++;
-	}
-
 	return current;
 }
 
 char Lexer::advance(){
 	index++;
-	return peek();
+	if(peek() == '\n'){
+		line++;
+		column = 1;
+	}else{
+		column++;
+	}
+	return current;
 }
 
 // Determinators
@@ -100,8 +98,12 @@ Tokens Lexer::lex(const std::string & code){
 	while(current){
 		Token token;
 
+		token.line = line;
+		token.column = column;
+
 		if(is_skipable(current)){
 			advance();
+			continue;
 		}else if(is_identifier_first(current)){
 			std::string iden;
 			do{
@@ -149,6 +151,7 @@ Tokens Lexer::lex(const std::string & code){
 		}else{
 			unexpected_token();
 		}
+
 		tokens.push_back(token);
 	}
 

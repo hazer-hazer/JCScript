@@ -20,6 +20,8 @@ struct Token {
 	Type type;
 	std::string value;
 
+	unsigned int line;
+	unsigned int column;
 };
 
 #endif
