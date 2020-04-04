@@ -1,12 +1,31 @@
 #include "src/Lexer.h"
 
+#include <iostream>
+
 int main(int argc, char const *argv[]) {
-    Lexer lexer;
 
-    std::string code = "1234.123421";
+	// for(char c = 32; c < 127; c++){
+	// 	std::cout << (int)c << " " << c << std::endl;
+	// }
 
-    for(token t : lexer.lex(code))
-        std::cout << t.val << std::endl;
+	Lexer lexer;
+
+	const char * code = "var a = 0";
+						"print(a)";
+
+	Tokens tokens;
+
+	try{
+		tokens = lexer.lex(code);
+	}catch(const char * message){
+		std::cout << message << std::endl;
+	}catch(const std::string & message){
+		std::cout << message << std::endl;
+	}
+
+	for(auto t : tokens){
+		std::cout << t.type << " " << t.value << std::endl;
+	}
 
     return 0;
 }
