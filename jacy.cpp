@@ -1,17 +1,23 @@
 #include "src/Lexer.h"
 
 #include <iostream>
+#include <fstream>
+#include <sstream>
 
-int main(int argc, char const *argv[]) {
+int main(int argc, char const * argv[]) {
 
-	// for(char c = 32; c < 127; c++){
-	// 	std::cout << (int)c << " " << c << std::endl;
-	// }
+	if(argc < 2){
+		std::cout << "Please, specify path to input file" << std::endl;
+	}
+
+	std::ifstream file(argv[1]);
+
+	std::stringstream buffer;
+	buffer << file.rdbuf();
+
+	std::string code = buffer.str();
 
 	Lexer lexer;
-
-	const char * code = "var a = 'my_string\n"
-						"print(a)";
 
 	ObjectBuffer objects;
 
