@@ -3,29 +3,28 @@
 
 #include <vector>
 
-#include "object.h"
+#include "Token.h"
 
 class Lexer {
-
 	public:
 		Lexer();
 		virtual ~Lexer() = default;
 
-		ObjectBuffer & lex(const std::string & code);
+		std::vector <Token> lex(const std::string & code);
 
 	private:
-		ObjectBuffer objects;
-		
+		// Output tokens
+		std::vector <Token> tokens;
+
 		// Stream
 		std::string code;
-
 		unsigned int index;
 		char current;
 		char peek();
 		char advance();
-
-		unsigned int line;
-		unsigned int column;
+		void add_token(const Token & t);
+		uint32_t line;
+		uint32_t column;
 
 		// Determinators
 		bool is_skipable(const char & c);
@@ -34,12 +33,12 @@ class Lexer {
 		bool is_identifier(const char & c);
 		bool is_punct(const char & c);
 		bool is_quote(const char & c);
+		bool is_endl(const char & c);
 
 	// Errors
 	private:
-		void unexpected_token();
-		void unexpected_token(const std::string & val);
-		void expected_token(const std::string & val);
+		void error(const std::string & msg);
+		void unexpected_token(const std::string & val = "");
 };
 
 #endif
