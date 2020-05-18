@@ -1,14 +1,10 @@
 #ifndef ERROR_H
 #define ERROR_H
 
-#include <sstream>
-#include <exception>
-
-// TODO: Add specified custom exception
 struct Exception : std::exception {
 	std::string msg;
 
-	Exception(const std::string & msg){
+	ParsingException(const std::string & msg){
 		this->msg = msg;
 	}
 
@@ -17,7 +13,7 @@ struct Exception : std::exception {
     }
 };
 
-inline void err(const std::string & message, uint32_t line, uint32_t column){
+inline void error(const std::string & msg, unsigned int line, unsigned int column){
 	std::stringstream output;
 	output << "\e[0;31m" << message << " at " << line << ":" << column;
 

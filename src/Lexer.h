@@ -3,6 +3,7 @@
 
 #include <vector>
 
+#include "Stream.h"
 #include "Token.h"
 
 class Lexer {
@@ -16,15 +17,7 @@ class Lexer {
 		// Output tokens
 		std::vector <Token> tokens;
 
-		// Stream
-		std::string code;
-		unsigned int index;
-		char current;
-		char peek();
-		char advance();
 		void add_token(const Token & t);
-		uint32_t line;
-		uint32_t column;
 
 		// Determinators
 		bool is_skipable(const char & c);

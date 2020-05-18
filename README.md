@@ -75,17 +75,17 @@ Identifiers can contain letters, undersore symbol (`_`) or dollar symbol (`$`)
 
 ## Notes and Ideas
 
-1. Lightweight bit-mask
+### 1. Lightweight bit-mask
 
 If there's need to store a bunch of boolean values, it can be written with something like enum.
 
-2. SQL like queries for loops and more.
+### 2. SQL like queries for loops and more.
 
 Syntax:
 
 for 
 
-3. What about different code style support?
+### 3. What about different code style support?
 
 Python?
 for x in array:
@@ -96,7 +96,7 @@ for(x in array){
 	
 }
 
-4. Idea: No switch-case statements! `Match`
+### 4. Idea: No switch-case statements! `Match`
 
 I'm not sure that switch case will be useful and modern-like in JCS.
 So I'm gonna use something like compilation of ideas from Elm-Lang and GDScript (`match` keyword).
@@ -117,11 +117,11 @@ If `any` is upper of something then everything under `any` will be skipped (or i
 Why `any`?
 I think it's pretty convenient to debug with it. If something is wrong at part of code where is `match`, I can put `any` at first line and check for any match.
 
-5. Operator overloading in OOP
+### 5. Operator overloading in OOP
 
 Now, I can't say anything about it, before OOP syntax is described.
 
-6. Operator overloading with functions (?)
+### 6. Operator overloading with functions (?)
 
 I have one strange idea.
 What if there will be something like functions that register operators for type.
@@ -136,7 +136,7 @@ operator + (left: string, right: string) : string {
 It has some problems with global registration and scopes.
 So I'm not sure that it is good idea, but...
 
-7. Special arrays for any case.
+### 7. Special arrays for any case.
 
 For example.
 If need to iterate through an array:
@@ -150,7 +150,7 @@ while(a.peek() != "i_search_for_it"){
 ```
 It's just an example of syntax and it must be improved.
 
-8. Inline Modules
+### 8. Inline Modules
 
 ```
 val scope = {
@@ -190,13 +190,13 @@ val some_stuff = {
 some_stuff()
 ```
 
-9. Modules
+### 9. Modules
 
-10. Function prototyping
+### 10. Function prototyping
 
 NO....
 
-11. Primitive Types
+### 11. Primitive Types
 
 In JacyScript there's no primitive types as they are.
 All types have submembers that are built in.
@@ -236,15 +236,15 @@ val c = getC()
 
 Note: generics (???)
 
-12. Types casting
+### 12. Types casting
 
 Different statements automaticaly cast to needed
 e.g. if auto-cast condition to bool if it's possible
 
-13. Non-primitive types
+### 13. Non-primitive types
 
 
-14. While in if-condition (?)
+### 14. While in if-condition (?)
 
 What about `while` in if conditions ?
 
@@ -281,7 +281,7 @@ while(a){
 ```
 WOW, It's pretty strange......
 
-15. For loop
+### 15. For loop
 
 Watch Note.16
 
@@ -316,7 +316,7 @@ for(var x in 5, var y in )
 
 Note: Steps (?!!!)
 
-16. Ranges (`:` range operator)
+### 16. Ranges (`:` range operator)
 
 Range is non-primitive types, but it determines (Think: maybe not...) as `range` by `typeof` operator (watch 17.)
 
@@ -351,9 +351,9 @@ print(x[5]) // Prints `10`
 But wtf??? What is the case when it's useful?!
 
 
-17. `typeof` keyword
+### 17. `typeof` keyword
 
-18. Idea: Objects
+### 18. Idea: Objects
 
 Do I need them?? Objects like in JS (?)
 
@@ -367,7 +367,7 @@ cons:
 - Problems with typing
 - Uncontrollable
 
-19. Classes
+### 19. Classes
 
 Sooo... Ok, I'm not quite sure about `object`, but I know that there must be classes.
 
@@ -390,7 +390,7 @@ By defualt `color` is private and it's ok in Jacy not write `private` keyword
 Future features:
 - `get` / `set`
 
-20. Idea: Ranges generators
+### 20. Idea: Ranges generators
 
 Idea:
 '..' operator will automatically generate numbers or strings(?) in given range start-end-inclusive.
@@ -404,12 +404,12 @@ val numbers = [0..100]
 
 ```
 
-21. Idea: Dialects
+### 21. Idea: Dialects
 
 Maybe, in the future I'll add special dialects feature.
 At most to create more C-like or more Python-like implementations of Jacy.
 
-22. Tuples
+### 22. Tuples
 
 Tuples are fixed-size arrays with specified types.
 
@@ -420,7 +420,7 @@ Syntax:
 var tuple: [string, number]
 ```
 
-23. User-defined types, `type` keyword
+### 23. User-defined types, `type` keyword
 
 Syntax:
 ```
@@ -428,7 +428,7 @@ Syntax:
 type pair = [string, string]
 ```
 
-24. `match` statement and match-functions
+### 24. `match` statement and match-functions
 
 In JacyScript there's no `switch-case` statement (Watch 4.)
 
@@ -476,8 +476,8 @@ match(typeof x){
 }
 ```
 
-25. Checking for `instance of`, `is` keyword
+### 25. Checking for `instance of`, `is` keyword
 
-26. Type casting, `as` keyword
+### 26. Type casting, `as` keyword
 
-27. Type checking, `typeof` keyword
+### 27. Type checking, `typeof` keyword
