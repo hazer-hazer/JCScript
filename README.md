@@ -62,6 +62,10 @@ Identifiers can contain letters, undersore symbol (`_`) or dollar symbol (`$`)
 125 `}`
 126 `~`
 
+## Helpful links
+[About writing a compiler](https://softwareengineering.stackexchange.com/questions/165543/how-to-write-a-very-basic-compiler)
+
+
 ## Description and Docs
 
 ### Marks
@@ -481,3 +485,32 @@ match(typeof x){
 ### 26. Type casting, `as` keyword
 
 ### 27. Type checking, `typeof` keyword
+
+### 28. Compilation-time constants
+
+It can be implemented on Lexer level.
+Just create a vector of constants and then when checking identifier for keyword/id
+replace identifier with constant.
+
+Note: constant will be added to constants stack just after it appears, so this example will work:
+```
+val A = 10
+print(A)
+
+const A = 15
+print(A) // Abolutely same to `print(15)`
+```
+
+After `A` was found by Lexer, Lexer will replace all identifiers `A` with `15`.
+
+!!!
+Thought: I got that `const` must have scope,
+so it is not possible to implement it on Lexer level.
+!!!
+
+### 29. If as an expression
+
+In Jacy if is an expression, so it can be used like that (same to Kotlin):
+```
+val x = if(...) // ...
+```

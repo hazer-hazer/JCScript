@@ -1,3 +1,2 @@
-if(a){
-	print('aaa')	
-}
+val a: string = 10
+val b: string? = 100

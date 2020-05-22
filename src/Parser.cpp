@@ -1,340 +1,361 @@
 #include "Parser.h"
-#include "error.h"
-
-#include <iostream>
 
 Parser::Parser(){
 	index = 0;
-	tokens.clear();
-	tree.clear();
 }
 
-Node * Parser::peek(){
-	if(!advanced){
-		return current;
-	}
-	advanced = false;
-	current = new Node();
-	current->interpret(tokens[index]);
-	return current;
+bool Parser::eof(){
+	return peek().type == T_PROG_END;
 }
 
-Node * Parser::advance(){
-	index++;
-	advanced = true;
-	return peek();
+Token Parser::peek(){
+	return tokens[index];
 }
 
-bool Parser::prog_end(){
-	return peek()->type == T_PROG_END;
+Token Parser::advance(){
+	return tokens[++index];
 }
 
-bool Parser::is_op(const std::string & op){
-	return peek()->type == T_OP && peek()->str() == op;
+// Recognizers
+bool Parser::is_id(){
+	return peek().type == T_ID;
 }
-bool Parser::is_kw(const std::string & kw){
-	return peek()->type == T_KW && peek()->str() == kw;
+bool Parser::is_num(){
+	// TODO: Rewrite for over number types
+	return peek().type == T_NUM;
+}
+bool Parser::is_str(){
+	return peek().type == T_STR;
+}
+bool Parser::is_endl(){
+	return peek().type == T_ENDL;
+}
+bool Parser::is_op(){
+	return peek().type == T_OP;
+}
+bool Parser::is_kw(){
+	return peek().type == T_KW;
 }
 
-// Checks if current node equals given binary operator Node
-bool Parser::is_bin_op(){
-	return peek()->type == T_OP && PREC_BIN.find(peek()->str()) != PREC_BIN.end();
+bool Parser::is_op(const Operator & op){
+	return is_op() && peek().op() == op;
+}
+bool Parser::is_kw(const Keyword & kw){
+	return is_kw() && peek().kw() == kw;
 }
 
-// Do not use `skip` for numbers skipping (!)
-void Parser::skip(const TokenType & type,
-				  const std::string & val,
-				  const bool & optional,
-				  const bool & infinite)
-{
-	if(peek()->type == type && peek()->str() == val){
-		advance();
-		if(infinite){
-			while(peek()->type == type && peek()->str() == val){
-				advance();
-			}
-		}
-	}else if(!optional){
-		expected_error(token_type_to_str(type) + " `" + val + "`");
-	}
-}
-void Parser::skip_op(const std::string & op, const bool & optional){
-	skip_endl(true);
-	skip(T_OP, op, optional, false);
-	skip_endl(true);
-}
-void Parser::skip_kw(const std::string & kw, const bool & optional){
-	skip_endl(true);
-	skip(T_KW, kw, optional, false);
-	skip_endl(true);
-}
-// TODO: Rename to `skip_endls`, because of semantic (skip_endl skips all endls)
+// Skippers
 void Parser::skip_endl(const bool & optional){
-	skip(T_ENDL, "", optional, true);
+	if(is_endl()){
+		advance();
+	}else if(!optional){
+		expected_error("end of line");
+	}
+}
+void Parser::skip_expr_end(const bool & optional){
+	// Expression end can be endl or ';'
+	if(is_endl() || is_op(OP_SEMICOLON)){
+		advance();
+	}else if(!optional){
+		expected_error("end of expression (end of line or ';')");
+	}
+}
+void Parser::skip_op(const Operator & op, const bool & skip_side_endl){
+	if(skip_side_endl){
+		skip_endl();
+	}
+	if(is_op(op)){
+		advance();
+	}else{
+		expected_error("operator `" + op_to_str(op) + "`");
+	}
+	if(skip_side_endl){
+		skip_endl(true);
+	}
 }
 
+void Parser::skip_kw(const Keyword & kw, const bool & skip_side_endl){
+	if(skip_side_endl){
+		skip_endl(true);
+	}
+	if(is_kw(kw)){
+		advance();
+	}else{
+		expected_error("keyword `" + kw_to_str(kw) + "`");
+	}
+	if(skip_side_endl){
+		skip_endl(true);
+	}
+}
+
+// Errors
 void Parser::error(const std::string & msg){
-	err("Parser [ERROR]: " + msg, peek()->line, peek()->column);
+	err("Parser [ERROR]: " + msg, peek().line, peek().line);
 }
-
 void Parser::expected_error(const std::string & expected, const std::string & given){
 	error("Expected " + expected + ", " + given + " given");
 }
-
 void Parser::expected_error(const std::string & expected){
-	std::string given = peek()->type == T_NUM ? std::to_string(peek()->real()) : peek()->str();
-	expected_error(expected, token_type_to_str(peek()->type) + " `" + given + "`");
+	// Note: set `given` as current token and print without position
+	std::string given;
+	if(eof()){
+		given = "end of file";
+	}else{
+		given = peek().to_string();
+	}
+	expected_error(expected, given);
 }
-
 void Parser::unexpected_error(){
-	tokens[index].unexpected_error();
+	peek().unexpected_error();
 }
 
-Tree Parser::parse(const std::vector <Token> & tokens){
+StatementList Parser::parse(const std::vector <Token> & tokens){
 	this->tokens = tokens;
 
-	while(!prog_end()){
-		tree.push_back(parse_expression());
-		if(!prog_end()){
-			skip_endl();
+	while(!eof()){
+		tree.push_back(parse_statement());
+		if(!eof()){
+			skip_expr_end();
 		}
 	}
 
 	return tree;
 }
 
-Node * Parser::parse_expression(){
-	return maybe_call([&]() -> void* {
-		return maybe_binary(parse_atom(), 0);
-	});
+NStatement * Parser::parse_statement(){
+	if(is_kw()){
+		switch(peek().kw()){
+			case KW_VAR:
+			case KW_VAL:{
+				return parse_var_decl();
+				break;
+			}
+			case KW_FUNC:{
+				return parse_func_decl();
+				break;
+			}
+		}
+	}
+
+	unexpected_error();
+	return nullptr;
 }
 
-Tree Parser::parse_delimited(
-	const std::string & begin,
-	const std::string & end,
-	const std::string & sep)
-{
-	Tree nodes;
-	bool first = true;
-	skip_op(begin);
-	while(!prog_end()){
-		if(is_op(end)){
-			break;
-		}
-		if(first){
-			first = false;
-		}else if(!sep.empty()){
-			skip_op(sep);
+NExpression * Parser::parse_expression(){
+	// AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	// AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+	// aaAAAAAAAaAAAaaaaaAAAAAAAAAAAAaaaaaaaaaaaAAAAAAAAAA
+	
+	
+	// if(peek().type == T_ID){
+	// 	NIdentifier * left = parse_identifier();
+	// 	advance();
+	// 	if(peek().type == T_OP){
+	// 		return parse_operator(left);
+	// 	}
+	// }else if(peek().type == T)
+
+	return nullptr;
+}
+
+NBlock * Parser::parse_block(){
+	skip_op(OP_BRACE_L);
+	NBlock * block;
+	while(!is_op(OP_BRACE_R) && !eof()){
+		block->statements.push_back(parse_statement());
+		if(!eof()){
+			skip_expr_end();
 		}else{
-			skip_endl();
+			expected_error("closing brace `}`");
 		}
-		if(is_op(end)){
-			break;
-		}
-		// Think about `parser` function, maybe can be not only parse_expression
-		nodes.push_back(parse_expression());
 	}
-	// Note: Could be replaced with `advance()`
-	skip_op(end);
-	return nodes;
+	skip_op(OP_BRACE_R);
+	return block;
 }
 
-Node * Parser::parse_atom(){
-	return maybe_call([&]() -> void* {
-		// Skip optional endl
-		skip_endl(true);
-		
-		if(is_kw("if")){
-			return parse_condition();
-		}
-		if(is_kw("while")){
-			return parse_while();
-		}
-		if(is_kw("for")){
-			return parse_for();
-		}
-		if(is_kw("var") || is_kw("val")){
-			return parse_var();
-		}
-		if(is_kw("func")){
-			return parse_func();
-		}
-		if(is_op("{")){
-			return parse_scope();
-		}
-
-		if(is_op("(")){
-			advance();
-			// Note: Maybe, could be parse_delimited with endls
-			Node * node = parse_expression();
-			skip_op(")");
-			return node;
-		}
-		if(is_op("[")){
-			return parse_array();
-		}
-
-		Node * node = peek();
-		if(node->type == T_ID || node->type == T_STR || node->type == T_NUM){
-			advance();
-			return node;
-		}
-
-		unexpected_error();
-
-		return new Node();
-	});
+NIdentifier * Parser::parse_identifier(){
+	if(!is_id()){
+		expected_error("identifier");
+	}
+	NIdentifier * id = new NIdentifier(peek().str());
+	advance();
+	return id;
 }
 
-VarNode * Parser::parse_var(){
-	const bool is_val = peek()->str() == "val";
-
-	if(advance()->type != T_ID){
-		expected_error("variable name (identifier)");
+NType * Parser::parse_type(){
+	// TODO: Rewrite for special types
+	if(!is_id()){
+		expected_error("identifier");
 	}
-
-	const std::string var_name = peek()->str();
+	NIdentifier * type_id = parse_identifier();
 
 	advance();
-	
-	// By default variable type is any
-	std::string var_type = "any";
 
-	if(is_op(":")){
-		// TODO: Add array type
-		// Note: Now only works with primitive types
-		// Note: Does not work with endls
-		if(advance()->type != T_ID){
-			expected_error("variable type");
-		}
-		var_type = peek()->str();
+	bool nullable = false;
+	if(is_op(OP_QUESTION_MARK)){
+		nullable = true;
 		advance();
 	}
 
-	return new VarNode(var_type, var_name, is_val);
+	return new NType(type_id, nullable);
 }
 
-FuncNode * Parser::parse_func(){
-	if(advance()->type != T_ID){
-		expected_error("function name (identifier)");
+NVarDecl * Parser::parse_var_decl(){
+	const bool is_val = is_kw(KW_VAL);
+	advance();
+	NIdentifier * id = parse_identifier();
+	advance();
+	
+	NType * type = nullptr;
+	if(is_op(OP_COLON)){
+		advance();
+		type = parse_type();
 	}
 
-	const std::string func_name = peek()->str();
+	NExpression * assignment_expr = nullptr;
+	if(is_op(OP_ASSIGN)){
+		advance();
+		assignment_expr = parse_expression();
+	}
 
+	return new NVarDecl(is_val, *id, type, assignment_expr);
+}
+
+NFuncCall * Parser::parse_func_call(NExpression * left){
+	skip_op(OP_PAREN_L);
+	ExpressionList args;
+	while(!is_op(OP_PAREN_R) && !eof()){
+		args.push_back(parse_expression());
+		if(eof()){
+			skip_expr_end();
+		}
+		if(!is_op(OP_PAREN_R)){
+			skip_op(OP_COMMA);
+		}
+	}
+	skip_op(OP_PAREN_R);
+	return new NFuncCall(*left, args);
+}
+
+// 
+// Function
+// 
+NArgDecl * Parser::parse_arg_declaration(){
+	NIdentifier * id = parse_identifier();
+	// TODO: Add default `any` type
+	NType * type = nullptr;
+	if(is_op(OP_COLON)){
+		advance();
+		type = parse_type();
+	}
+
+	NExpression * default_value = nullptr;
+	if(is_op(OP_ASSIGN)){
+		advance();
+		default_value = parse_expression();
+	}
+
+	return new NArgDecl(*id, type, default_value);
+}
+
+ArgList Parser::parse_arg_declaration_list(){
+	skip_op(OP_PAREN_L);
+	ArgList args;
+	while(!is_op(OP_PAREN_R) && !eof()){
+		args.push_back(parse_arg_declaration());
+		if(eof()){
+			expected_error("closing parenthesis `)`");
+		}
+		if(!is_op(OP_PAREN_R)){
+			skip_op(OP_COMMA);
+		}
+	}
+	skip_op(OP_PAREN_R);
+	return args;
+}
+
+NFuncDecl * Parser::parse_func_decl(){
+	skip_kw(KW_FUNC);
+	NIdentifier * id = parse_identifier();
 	advance();
+	ArgList args = parse_arg_declaration_list();
 
-	Tree args = parse_args();
+	NType * return_type = nullptr;
+	if(is_op(OP_COLON)){
+		return_type = parse_type();
+	}
 
-	return new FuncNode(func_name, args, parse_scope());
+	NBlock * block = parse_block();
+
+	return new NFuncDecl(*id, args, return_type, *block);
 }
 
-// TODO: parse_tail -- parse scope or one expression for loops or ifs and etc.
-
-ScopeNode * Parser::parse_scope(){
-	return new ScopeNode(parse_delimited("{", "}", ""));
-}
-
-// TODO: Think about different parsers for call args and func args
-Tree Parser::parse_args(){
-	return parse_delimited("(", ")", ",");
-}
-
-ArrayNode * Parser::parse_array(){
-	return new ArrayNode(parse_delimited("[", "]", ","));
-}
-
-ConditionNode * Parser::parse_condition(){
-	skip_kw("if");
-
-	Condition If;
-
-	skip_op("(");
+// 
+// Condition
+// 
+NCondition * Parser::parse_condition(){
+	skip_kw(KW_IF);
+	
+	ConditionBlock If;
+	skip_op(OP_PAREN_L);
 	If.first = parse_expression();
-	skip_op(")");
+	skip_op(OP_PAREN_R);
+	If.second = parse_block();
 
-	// TODO: Add one line scope
-	If.second = parse_scope();
+	std::vector <ConditionBlock> Elifs;
+	while(is_kw(KW_ELIF)){
+		skip_kw(KW_ELIF);
 
-	std::vector <Condition> Elifs;
-	ScopeNode * Else = nullptr;
-
-	while(is_kw("elif")){
-		skip_kw("elif");
-
-		Condition Elif;
-
-		skip_op("(");
+		ConditionBlock Elif;
+		skip_op(OP_PAREN_L);
 		Elif.first = parse_expression();
-		skip_op(")");
+		skip_op(OP_PAREN_R);
 
-		Elif.second = parse_scope();
+		Elif.second = parse_block();
 
 		Elifs.push_back(Elif);
 	}
 
-	if(is_kw("else")){
-		skip_kw("else");
-		Else = parse_scope();
+	NBlock * Else = nullptr;
+	if(is_kw(KW_ELSE)){
+		advance();
+		Else = parse_block();
 	}
 
-	return new ConditionNode(If, Elifs, Else);
+	return new NCondition(If, Elifs, Else);
 }
 
-WhileNode * Parser::parse_while(){
-	skip_kw("while");
+NWhile * Parser::parse_while(){
+	skip_kw(KW_WHILE);
 
-	Condition While;
+	skip_op(OP_PAREN_L);
+	NExpression * condition = parse_expression();
+	skip_op(OP_PAREN_R);
 
-	skip_op("(");
-	While.first = parse_expression();
-	skip_op(")");
+	NBlock * block = parse_block();
 
-	While.second = parse_scope();
-
-	return new WhileNode(While.first, While.second);
+	return new NWhile(*condition, *block);
 }
 
-ForNode * Parser::parse_for(){
-	skip_kw("for");
+NFor * Parser::parse_for(){
+	skip_kw(KW_FOR);
 
-	Node * For;
-	Node * In;
-	ScopeNode body;
+	skip_op(OP_PAREN_L);
 
-	skip_op("(");
-	// TODO: Add special construction support. Like for(var [key, val] in map)
-	// Parse For-var construction
-	skip_kw("var");
-	For = peek();
-	advance();
+	// TODO: Add (key, val)
+	NIdentifier * For;
 
-	skip_kw("in");
-	In = parse_expression();
-
-	skip_op(")");
-
-	return new ForNode(For, In, parse_scope());
-}
-
-CallNode * Parser::parse_call(Node * func_name){
-	return new CallNode(func_name, parse_args());
-}
-
-Node * Parser::maybe_call(const std::function <void*()> & expression){
-	Node * left = static_cast <Node*> (expression());
-	return is_op("(") ? parse_call(left) : left;
-}
-
-Node * Parser::maybe_binary(Node * left, const uint8_t & prec){
-	Node * node = peek();
-	if(is_bin_op()){
-		// is_bin_op ensures that PREC_BIN[peek] exists, so no checking otherwise
-		uint8_t left_prec = PREC_BIN.at(peek()->str());
-		if(left_prec > prec){
-			advance();
-			return maybe_binary(new BinNode(node->str(), left, maybe_binary(parse_atom(), left_prec)), prec);
-		}
+	if(is_op(OP_PAREN_L)){
+		// Parse key, val
+	}else{
+		For = parse_identifier();
 	}
 
-	return left;
+	skip_op(OP_PAREN_R);
+
+	skip_kw(KW_IN);
+
+	NExpression * In = parse_expression();
+
+	return new NFor(*For, *In);
 }

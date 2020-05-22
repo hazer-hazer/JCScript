@@ -1,10 +1,15 @@
 #ifndef ERROR_H
 #define ERROR_H
 
+#include <sstream>
+
+// TODO: Think about CursorErrorHandler class as Lexer, Token, Parser parent
+// It will contain line, column
+
 struct Exception : std::exception {
 	std::string msg;
 
-	ParsingException(const std::string & msg){
+	Exception(const std::string & msg){
 		this->msg = msg;
 	}
 
@@ -13,9 +18,9 @@ struct Exception : std::exception {
     }
 };
 
-inline void error(const std::string & msg, unsigned int line, unsigned int column){
+inline void err(const std::string & msg, uint32_t line, uint32_t column){
 	std::stringstream output;
-	output << "\e[0;31m" << message << " at " << line << ":" << column;
+	output << "\e[0;31m" << msg << " at " << line << ":" << column;
 
 	throw Exception(output.str());
 }

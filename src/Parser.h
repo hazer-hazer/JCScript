@@ -1,57 +1,77 @@
 #ifndef PARSER_H
 #define PARSER_H
 
-#include <vector>
 #include <map>
-#include <functional>
+
 #include "Node.h"
 
-const std::map <std::string, uint8_t> PREC_BIN {
-	{"=", 3},
-	{":", 4},
-	{"||", 5},
-	{"&&", 6},
-	{"==", 10}, {"!=", 10},
-	{"<", 11}, {">", 11}, {"<=", 11}, {">=", 11},
-	{"+", 13}, {"-", 13},
-	{"*", 14}, {"/", 14}
+const std::map <Operator, int> OP_INFIX_PREC {
+	{OP_ASSIGN, 3}, {OP_ASSIGN_ADD, 3}, {OP_ASSIGN_SUB, 3},
+	{OP_ASSIGN_MUL, 3}, {OP_ASSIGN_DIV, 3}, {OP_ASSIGN_MOD, 3},
+	{OP_ASSIGN_EXP, 3}, {OP_ASSIGN_BIT_OR, 3}, {OP_ASSIGN_BIT_AND, 3},
+	{OP_ASSIGN_BIT_XOR, 3}, {OP_ASSIGN_SHIFT_LEFT, 3}, {OP_ASSIGN_SHIFT_RIGHT, 3},
+
+	{OP_OR, 5},
+	{OP_AND, 6},
+	{OP_NULL_COALESCING, 7},
+	{OP_BIT_OR, 8},
+	{OP_BIT_XOR, 9},
+	{OP_BIT_AND, 10},
+	{OP_EQUAL, 11}, {OP_NOT_EQUAL, 11},
+
+	{OP_LESS, 12}, {OP_LESS_EQUAL, 12}, {OP_GREATER, 12},
+	{OP_GREATER_EQUAL, 12}, {OP_SPACESHIP, 12},
+	
+	{OP_SHIFT_LEFT, 13}, {OP_SHIFT_RIGHT, 13},
+	{OP_ADD, 14}, {OP_SUB, 14},
+	{OP_MUL, 15}, {OP_DIV, 15}, {OP_MOD, 15},
+	{OP_EXP, 16},
+
+	{OP_MEMBER_ACCESS, 18}
 };
 
-const std::map <std::string, uint8_t> PREC_PRE {};
-const std::map <std::string, uint8_t> PREC_POST {};
+const std::map <Operator, int> OP_PREFIX_PREC {
+	{OP_SPREAD, 1},
+	{OP_INC, 17}, {OP_DEC, 17}, {OP_ADD, 17}, {OP_SUB, 17},
+	{OP_BIT_INVERT, 17}, {OP_NOT, 17},
+};
+
+const std::map <Operator, int> OP_POSTFIX_PREC {
+	{OP_INC, 18}, {OP_DEC, 18}
+};
 
 class Parser {
 	public:
 		Parser();
 		virtual ~Parser() = default;
 
-		Tree parse(const std::vector <Token> & tokens);
+		StatementList parse(const std::vector <Token> & tokens);
 
 	private:
-		Tree tree;
+		StatementList tree;
 
 		std::vector <Token> tokens;
+		uint32_t index;
+		bool eof();
+		Token peek();
+		Token advance();
 
-		uint32_t index = 0;
-		Node * current;
-		Node * peek();
-		Node * advance();
-		bool advanced = true;
-		bool prog_end();
+		// Recognizers
+		bool is_id();
+		bool is_num();
+		bool is_str();
+		bool is_endl();
+		bool is_op();
+		bool is_kw();
 
-		// Check if current token is type of op/kw and val equals given
-		bool is_op(const std::string & op);
-		bool is_kw(const std::string & kw);
+		bool is_op(const Operator & op);
+		bool is_kw(const Keyword & kw);
 
-		bool is_bin_op();
-
-		void skip(const TokenType & type,
-				  const std::string & val,
-				  const bool & optional = false,
-				  const bool & infinite = false);
-		void skip_op(const std::string & op, const bool & optional = false);
-		void skip_kw(const std::string & kw, const bool & optional = false);
-		void skip_endl(const bool & endl = false);
+		// Skippers
+		void skip_endl(const bool & optional = false);
+		void skip_expr_end(const bool & optional = false);
+		void skip_op(const Operator & op, const bool & skip_endl = true);
+		void skip_kw(const Keyword & kw, const bool & skip_endl = true);
 
 		// Errors
 		void error(const std::string & msg);
@@ -59,26 +79,40 @@ class Parser {
 		void expected_error(const std::string & expected);
 		void unexpected_error();
 
+		// 
 		// Parsers
-		Node * parse_expression();
-		Tree parse_delimited(const std::string & begin,
-							 const std::string & end,
-							 const std::string & sep);
-		Node * parse_atom();
+		// 
 		
-		VarNode * parse_var();
+		// Common
+		NStatement * parse_statement();
+		NExpression * parse_expression();
+		NBlock * parse_block();
 
-		FuncNode * parse_func();
-		ScopeNode * parse_scope();
-		CallNode * parse_call(Node * func_name);
-		Tree parse_args();
-		ArrayNode * parse_array();
-		ConditionNode * parse_condition();
-		WhileNode * parse_while();
-		ForNode * parse_for();
+		// Value
+		NIdentifier * parse_identifier();
+		
+		// Type
+		NType * parse_type();
 
-		Node * maybe_call(const std::function <void*()> & expression);
-		Node * maybe_binary(Node * left, const uint8_t & prec);
+		// Variable
+		NVarDecl * parse_var_decl();
+
+		// Function
+		NArgDecl * parse_arg_declaration();
+		ArgList parse_arg_declaration_list();
+		NFuncDecl * parse_func_decl();
+
+		// Function call
+		NFuncCall * parse_func_call(NExpression * left);
+
+		// Condition
+		NCondition * parse_condition();
+
+		// While
+		NWhile * parse_while();
+
+		// For
+		NFor * parse_for();
 };
 
 #endif
