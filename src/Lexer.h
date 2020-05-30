@@ -42,7 +42,7 @@ class Lexer {
 		bool is_quote(const char & c);
 		bool is_endl(const char & c);
 
-		std::string lex_number();
+		void lex_number();
 		std::string lex_identifier();
 
 	// Errors

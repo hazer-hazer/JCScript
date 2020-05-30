@@ -19,7 +19,7 @@ char Lexer::advance(){
 	index++;
 	if(peek() == '\n'){
 		line++;
-		column = 1;
+		column = 0;
 	}else{
 		column++;
 	}
@@ -54,7 +54,8 @@ bool Lexer::is_digit(const char & c){
 	return c >= '0' && c <= '9';
 }
 bool Lexer::is_hex(const char & c){
-	return (c >= 'a' && c <= 'f')
+	return is_digit(c)
+		|| (c >= 'a' && c <= 'f')
 		|| (c >= 'A' && c <= 'F');
 }
 bool Lexer::is_identifier_first(const char & c){
@@ -69,21 +70,44 @@ bool Lexer::is_quote(const char & c){
 	return c == '"' || c == '\'' || c == '`';
 }
 
-std::string Lexer::lex_number(){
+void Lexer::lex_number(){
 	std::string num;
-	bool accept_hex = false;
+	enum {
+		INT, BIN, HEX, FLOAT
+	} number_type;
+
+	bool negative = false;
+
+	number_type = INT;
+
+	if(peek() == '-'){
+		negative = true;
+		advance();
+	}
 
 	if(peek() == '0'){
+		if(negative){
+			error("Only integer numbers can be negative");
+		}
 		advance();
 		if(peek() == 'x' || peek() == 'X'){
-			accept_hex = true;
+			number_type = HEX;
 			advance();
 			num = "0x";
+		}else if(peek() == 'b' || peek() == 'B'){
+			number_type = BIN;
+			advance();
+			num = "0b";
 		}
 	}
 
-	if(accept_hex){
+	if(number_type == HEX){
 		while(is_hex(peek())){
+			num += peek();
+			advance();
+		}
+	}else if(number_type == BIN){
+		while(peek() == '0' || peek() == '1'){
 			num += peek();
 			advance();
 		}
@@ -93,7 +117,8 @@ std::string Lexer::lex_number(){
 		}while(is_digit(advance()));
 	}
 
-	if(peek() == '.'){
+	// Note: only decimal numbers can be floating
+	if(number_type == INT && peek() == '.'){
 		num += peek();
 		if(!is_digit(advance())){
 			unexpected_token("");
@@ -102,9 +127,25 @@ std::string Lexer::lex_number(){
 			num += peek();
 			advance();
 		}
+		number_type = FLOAT;
 	}
 
-	return num;
+	TokenType token_type;
+
+	switch(number_type){
+		case INT:
+		case HEX:
+		case BIN:{
+			token_type = T_INT;
+			break;
+		}
+		case FLOAT:{
+			token_type = T_FLOAT;
+			break;
+		}
+	}
+
+	add_token(token_type, num);
 }
 
 std::string Lexer::lex_identifier(){
@@ -163,18 +204,22 @@ std::vector <Token> Lexer::lex(const char * path){
 		}else if(is_identifier_first(peek())){
 			std::string id = lex_identifier();
 			if(is_kw(id)){
-				add_token(T_KW, id);
+				if(id == "true" || id == "false"){
+					add_token(T_BOOL, id);
+				}else{
+					add_token(T_KW, id);
+				}
 			}else if(id == "as" && peek() == '?'){
 				// Check for `as?` operator
 				add_token(OP_AS_NULLABLE);
 				advance();
-			}else if(str_operator(id) != OP_MAX){
+			}else if(str_operator(id) < operators.size()){
 				add_token(str_operator(id));
 			}else{
 				add_token(T_ID, id);
 			}
 		}else if(is_digit(peek())){
-			add_token(T_NUM, lex_number());
+			lex_number();
 		}else if(is_quote(peek())){
 			std::string str = "";
 			const char quote = peek();
@@ -211,7 +256,7 @@ std::vector <Token> Lexer::lex(const char * path){
 				case '-':{
 					advance();
 					if(is_digit(peek())){
-						add_token(T_NUM, "-" + lex_number());
+						lex_number();
 					}else if(peek() == '='){
 						add_token(OP_ASSIGN_SUB);
 						advance();
@@ -241,11 +286,11 @@ std::vector <Token> Lexer::lex(const char * path){
 							}
 							break;
 						}
-						case '/':{
-							add_token(OP_CLOSE_COMMENT);
-							advance();
-							break;
-						}
+						// case '/':{
+						// 	add_token(OP_CLOSE_COMMENT);
+						// 	advance();
+						// 	break;
+						// }
 						default: add_token(OP_MUL); break;
 					}
 					break;
@@ -264,7 +309,19 @@ std::vector <Token> Lexer::lex(const char * path){
 							break;
 						}
 						case '*':{
-							add_token(OP_OPEN_COMMENT);
+							// Start multiline comment
+							advance();
+							std::string comment_operator(1, peek());
+							comment_operator += advance();
+							std::cout << "comment_operator: " << comment_operator << std::endl;
+							while(!eof()){
+								std::cout << "comment_operator: " << comment_operator << std::endl;
+								if(comment_operator == "*/"){
+									break;
+								}
+								comment_operator = peek();
+								comment_operator += advance();
+							}
 							advance();
 							break;
 						}
@@ -491,6 +548,8 @@ std::vector <Token> Lexer::lex(const char * path){
 				}
 				case ';':{
 					add_token(OP_SEMICOLON);
+					// Note: Skip all repeating semicolons, also delimited with endls!
+					while(advance() == ';' || is_endl(peek())){}
 					break;
 				}
 

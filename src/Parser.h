@@ -32,8 +32,9 @@ const std::map <Operator, int> OP_INFIX_PREC {
 
 const std::map <Operator, int> OP_PREFIX_PREC {
 	{OP_SPREAD, 1},
+	{OP_RETURN, 1},
 	{OP_INC, 17}, {OP_DEC, 17}, {OP_ADD, 17}, {OP_SUB, 17},
-	{OP_BIT_INVERT, 17}, {OP_NOT, 17},
+	{OP_BIT_INVERT, 17}, {OP_NOT, 17}
 };
 
 const std::map <Operator, int> OP_POSTFIX_PREC {
@@ -57,21 +58,29 @@ class Parser {
 		Token advance();
 
 		// Recognizers
+		bool is_typeof(const TokenType & t);
 		bool is_id();
 		bool is_num();
 		bool is_str();
 		bool is_endl();
 		bool is_op();
 		bool is_kw();
+		bool is_expr_end();
 
 		bool is_op(const Operator & op);
 		bool is_kw(const Keyword & kw);
 
+		bool is_infix_op(const Operator & op);
+		bool is_prefix_op(const Operator & op);
+		bool is_postfix_op(const Operator & op);
+
 		// Skippers
 		void skip_endl(const bool & optional = false);
+		void skip_op(const Operator & op, const bool & skip_left_endl, const bool & skip_right_endl);
+		void skip_kw(const Keyword & kw, const bool & skip_left_endl, const bool & skip_right_endl);
+
+		bool optional_expr_end = false;
 		void skip_expr_end(const bool & optional = false);
-		void skip_op(const Operator & op, const bool & skip_endl = true);
-		void skip_kw(const Keyword & kw, const bool & skip_endl = true);
 
 		// Errors
 		void error(const std::string & msg);
@@ -86,7 +95,13 @@ class Parser {
 		// Common
 		NStatement * parse_statement();
 		NExpression * parse_expression();
+		NExpression * parse_atom();
+
+		// TODO: Add `one_line` parameter that will set if block can be one line
 		NBlock * parse_block();
+
+		// Maybe's
+		NExpression * maybe_infix(NExpression * left, int prec);
 
 		// Value
 		NIdentifier * parse_identifier();

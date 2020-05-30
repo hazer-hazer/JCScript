@@ -13,7 +13,9 @@
 // TODO: Think about null-safety
 
 enum TokenType {
-	T_NUM, // Number
+	T_INT,
+	T_FLOAT,
+	T_BOOL, // Note: Boolean stored inside BYTE
 	T_STR, // String
 	T_ID, // Identifier
 	T_KW, // Keyword - ID before
@@ -41,7 +43,7 @@ enum Operator {
 
 	OP_PIPELINE,
 
-	OP_OPEN_COMMENT, OP_CLOSE_COMMENT,
+	// OP_OPEN_COMMENT, OP_CLOSE_COMMENT,
 
 	// Punctuactions
 	// TODO: Think about creating separate type for puncts
@@ -58,41 +60,48 @@ enum Operator {
 
 	OP_IN, OP_NOT_IN,
 	OP_AS, OP_AS_NULLABLE,
-
-	OP_MAX
+	OP_RETURN
 };
 
-const static char * operator_names[OP_MAX] = {
+const std::vector <std::string> operators {
 	"=",
 	"+", "-", "*", "/", "%", "**",
 	"+=", "-=", "*=", "/=", "%=", "**=",
+
 	"&", "|", "^", "~",
 	"&=", "|=", "^=",
+
 	"++", "--",
+	
 	"&&", "||", "!",
 	"==", "!=",
 	"<", ">", "<=", ">=", "<=>",
+
 	"<<", ">>",
 	"<<=", ">>=",
+
 	"|>",
-	"/*", "*/",
+	
+	// "/*", "*/",
+
 	"(", ")",
 	"[", "]",
 	"{", "}",
 	":", ",",
 	".", "..", "...",
-	"?", "??", "?:"
+	"?", "??", "?:",
 	";",
 
 	// String operators
-	"[String Operators]",
+	"[String operators]",
 
 	"in", "!in",
-	"as", "as?"
+	"as", "as?",
+	"return"
 };
 
 inline Operator str_operator(const std::string & str){
-	return static_cast<Operator>(std::distance(operator_names, std::find(std::begin(operator_names) + OP_START_OF_STRING_OPS, std::end(operator_names), str.c_str())));
+	return static_cast<Operator>(std::distance(operators.begin(), std::find(operators.begin(), operators.end(), str)));
 }
 
 enum Keyword {
@@ -107,6 +116,7 @@ const std::vector <std::string> keywords {
 	"var", "val", "func",
 	"if", "elif", "else",
 	"for", "while", "repeat",
+	"true", "false",
 	"in"
 };
 
@@ -121,18 +131,17 @@ inline std::string kw_to_str(const Keyword & kw){
 	return keywords[static_cast<int>(kw)];
 }
 inline std::string op_to_str(const Operator & op){
-	return operator_names[static_cast<int>(op)];
+	return operators[static_cast<int>(op)];
 }
 
 // Typedefs here are used to simplify changing value types for Tokens and Nodes
 // For example, in the future std::string will be replaced with std::wstring
-typedef float Real;
-typedef std::string String;
+typedef unsigned char BYTE;
 
 // TODO: Add more number type: int, uint, short, double and etc.
 // TODO: Think about std::string vs char*
 // Note: As I tested, char* won't work properly in variant, because of setting by ref
-typedef std::variant<Real, String, Operator, Keyword> TokenVal;
+typedef std::variant<BYTE, int, double, std::string, Operator, Keyword> TokenVal;
 
 struct Token {
 	TokenType type;
@@ -145,15 +154,25 @@ struct Token {
 	Token(const TokenType & t, const std::string & v){
 		type = t;
 
+		// TODO: Add parsing errors catching for std::sto?
+
 		switch(t){
 			case T_ENDL:
 			case T_PROG_END:{
 				val = 0.0;
 				break;
 			}
-			case T_NUM:{
-				// TODO: Add parsing errors catching
-				val = std::stof(v);
+			case T_INT:{
+				val = std::stoi(v);
+				break;
+			}
+			case T_FLOAT:{
+				val = std::stod(v);
+				break;
+			}
+			case T_BOOL:{
+				// Note: This `case` might be useless because of parsing true/false keywords below
+				val = static_cast<BYTE>(v == "true");
 				break;
 			}
 			case T_STR:
@@ -165,8 +184,8 @@ struct Token {
 				// Check for bool and store it in Real
 				// If I'm right it won't increase complexity
 				if(v == "true" || v == "false"){
-					type = T_NUM;
-					val = static_cast<Real>(v == "true");
+					type = T_BOOL;
+					val = static_cast<BYTE>(v == "true");
 				}else{
 					val = str_to_kw(v);
 				}
@@ -180,12 +199,19 @@ struct Token {
 		val = op;
 	}
 
-	Real real(){
-		return std::get<Real>(val);
+	int Int(){
+		return std::get<int>(val);
 	}
-	String str(){
-		return std::get<String>(val);
+	double Float(){
+		return std::get<double>(val);
 	}
+	bool Bool(){
+		return static_cast<bool>(std::get<BYTE>(val));
+	}
+	std::string String(){
+		return std::get<std::string>(val);
+	}
+
 	Operator op(){
 		return std::get<Operator>(val);
 	}
@@ -204,7 +230,9 @@ struct Token {
 	std::string to_string(const bool & with_pos = false){
 		std::string token_str;
 		switch (type) {
-			case T_NUM: token_str = "number"; break;
+			case T_INT: token_str = "int"; break;
+			case T_FLOAT: token_str = "float"; break;
+			case T_BOOL: token_str = "bool"; break;
 			case T_STR: token_str = "string"; break;
 			case T_ID: token_str = "identifier"; break;
 			case T_KW: token_str = "keyword"; break;
@@ -215,12 +243,18 @@ struct Token {
 		}
 		token_str += " `";
 		switch (type) {
-			case T_NUM:
-				token_str += std::to_string(real());
+			case T_INT:
+				token_str += std::to_string(Int());
+				break;
+			case T_FLOAT:
+				token_str += std::to_string(Float());
+				break;
+			case T_BOOL:
+				token_str += std::to_string(Bool());
 				break;
 			case T_STR:
 			case T_ID:
-				token_str += str();
+				token_str += String();
 				break;
 			case T_KW:
 				token_str += kw_to_str(kw());

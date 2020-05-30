@@ -17,24 +17,26 @@ Token Parser::advance(){
 }
 
 // Recognizers
-bool Parser::is_id(){
-	return peek().type == T_ID;
+bool Parser::is_typeof(const TokenType & t){
+	return peek().type == t;
 }
-bool Parser::is_num(){
-	// TODO: Rewrite for over number types
-	return peek().type == T_NUM;
+bool Parser::is_id(){
+	return is_typeof(T_ID);
 }
 bool Parser::is_str(){
-	return peek().type == T_STR;
+	return is_typeof(T_STR);
 }
 bool Parser::is_endl(){
-	return peek().type == T_ENDL;
+	return is_typeof(T_ENDL);
 }
 bool Parser::is_op(){
-	return peek().type == T_OP;
+	return is_typeof(T_OP);
 }
 bool Parser::is_kw(){
-	return peek().type == T_KW;
+	return is_typeof(T_KW);
+}
+bool Parser::is_expr_end(){
+	return is_endl() || is_op(OP_SEMICOLON);
 }
 
 bool Parser::is_op(const Operator & op){
@@ -42,6 +44,16 @@ bool Parser::is_op(const Operator & op){
 }
 bool Parser::is_kw(const Keyword & kw){
 	return is_kw() && peek().kw() == kw;
+}
+
+bool Parser::is_infix_op(const Operator & op){
+	return OP_INFIX_PREC.find(op) != OP_INFIX_PREC.end();
+}
+bool Parser::is_prefix_op(const Operator & op){
+	return OP_PREFIX_PREC.find(op) != OP_PREFIX_PREC.end();
+}
+bool Parser::is_postfix_op(const Operator & op){
+	return OP_POSTFIX_PREC.find(op) != OP_POSTFIX_PREC.end();
 }
 
 // Skippers
@@ -54,28 +66,28 @@ void Parser::skip_endl(const bool & optional){
 }
 void Parser::skip_expr_end(const bool & optional){
 	// Expression end can be endl or ';'
-	if(is_endl() || is_op(OP_SEMICOLON)){
+	if(is_expr_end()){
 		advance();
 	}else if(!optional){
 		expected_error("end of expression (end of line or ';')");
 	}
 }
-void Parser::skip_op(const Operator & op, const bool & skip_side_endl){
-	if(skip_side_endl){
-		skip_endl();
+void Parser::skip_op(const Operator & op, const bool & skip_left_endl, const bool & skip_right_endl){
+	if(skip_left_endl){
+		skip_endl(true);
 	}
 	if(is_op(op)){
 		advance();
 	}else{
 		expected_error("operator `" + op_to_str(op) + "`");
 	}
-	if(skip_side_endl){
+	if(skip_right_endl){
 		skip_endl(true);
 	}
 }
 
-void Parser::skip_kw(const Keyword & kw, const bool & skip_side_endl){
-	if(skip_side_endl){
+void Parser::skip_kw(const Keyword & kw, const bool & skip_left_endl, const bool & skip_right_endl){
+	if(skip_left_endl){
 		skip_endl(true);
 	}
 	if(is_kw(kw)){
@@ -83,7 +95,7 @@ void Parser::skip_kw(const Keyword & kw, const bool & skip_side_endl){
 	}else{
 		expected_error("keyword `" + kw_to_str(kw) + "`");
 	}
-	if(skip_side_endl){
+	if(skip_right_endl){
 		skip_endl(true);
 	}
 }
@@ -113,9 +125,16 @@ StatementList Parser::parse(const std::vector <Token> & tokens){
 	this->tokens = tokens;
 
 	while(!eof()){
-		tree.push_back(parse_statement());
+		std::cout << "Parse statement: " << peek().to_string() << std::endl;
+		NStatement * statement = parse_statement();
+		std::cout << "pushing statement:" << statement->to_string() << " " << peek().to_string() << std::endl;
+		if(statement != nullptr){
+			tree.push_back(statement);
+		}
 		if(!eof()){
-			skip_expr_end();
+			// Note: some expressions end with for example `}` can be escaped optionaly
+			skip_expr_end(optional_expr_end);
+			optional_expr_end = false;
 		}
 	}
 
@@ -135,41 +154,138 @@ NStatement * Parser::parse_statement(){
 				break;
 			}
 		}
+	}else{
+		if(is_expr_end()){
+			// Skip statement that is just only a semicolon
+			advance();
+			return parse_statement();
+		}
+		NExpressionStatement * expression_statement = new NExpressionStatement(*parse_expression());
+		std::cout << "Parsed expression_statement: " << expression_statement->to_string() << std::endl;
+		return expression_statement;
+	}
+
+	return nullptr;
+}
+NExpression * Parser::parse_expression(){
+	NExpression * expression = maybe_infix(parse_atom(), 0);
+
+	return expression;
+}
+
+NExpression * Parser::maybe_infix(NExpression * left, int prec){
+	if(!is_op()){
+		return left;
+	}
+	Operator op = peek().op();
+	if(is_infix_op(op)){
+		int right_prec = OP_INFIX_PREC.at(op);
+		if(right_prec > prec){
+			advance();
+			return maybe_infix(new NInfixOp(*left, op, *maybe_infix(parse_atom(), right_prec)), prec);
+		}
+	}
+	return left;
+}
+
+NExpression * Parser::parse_atom(){
+	std::cout << "parse_atom: " << peek().to_string() << std::endl;
+
+	/*if(is_endl()){
+		// Skip end_of_line
+		advance();
+		return parse_atom();
+	}else */
+
+	// Numbers
+	if(is_typeof(T_INT)){
+		NInt * num = new NInt(peek().Int());
+		advance();
+		return num;
+	}
+	if(is_typeof(T_FLOAT)){
+		NFloat * num = new NFloat(peek().Float());
+		advance();
+		return num;
+	}
+	if(is_typeof(T_BOOL)){
+		NBool * num = new NBool(peek().Bool());
+		advance();
+		return num;
+	}
+
+	if(is_op(OP_PAREN_L)){
+		// Parse subexpression
+		skip_op(OP_PAREN_L, true, true);
+		NExpression * expression = parse_expression();
+		skip_op(OP_PAREN_R, true, false);
+		return expression;
+	}
+	if(is_str()){
+		NString * str = new NString(peek().String());
+		advance();
+		return str;
+	}
+	if(is_op()){
+		Operator op = peek().op();
+		// Prefix operator
+		if(is_prefix_op(op)){
+			advance();
+			return new NPrefixOp(op, *parse_expression());
+		}
+	}
+	if(is_kw()){
+		switch(peek().kw()){
+			case KW_IF:{
+				return parse_condition();
+				break;
+			}
+		}
+	}
+	if(is_id()){
+		NIdentifier * id = new NIdentifier(peek().String());
+		advance();
+		return id;
 	}
 
 	unexpected_error();
-	return nullptr;
-}
-
-NExpression * Parser::parse_expression(){
-	// AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-	// AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
-	// aaAAAAAAAaAAAaaaaaAAAAAAAAAAAAaaaaaaaaaaaAAAAAAAAAA
-	
-	
-	// if(peek().type == T_ID){
-	// 	NIdentifier * left = parse_identifier();
-	// 	advance();
-	// 	if(peek().type == T_OP){
-	// 		return parse_operator(left);
-	// 	}
-	// }else if(peek().type == T)
 
 	return nullptr;
 }
 
 NBlock * Parser::parse_block(){
-	skip_op(OP_BRACE_L);
-	NBlock * block;
-	while(!is_op(OP_BRACE_R) && !eof()){
-		block->statements.push_back(parse_statement());
-		if(!eof()){
-			skip_expr_end();
-		}else{
-			expected_error("closing brace `}`");
-		}
+	NBlock * block = new NBlock();
+
+	bool one_line = false;
+	bool first = true;
+
+	skip_endl(true);
+
+	if(is_op(OP_BRACE_L)){
+		skip_op(OP_BRACE_L, true, true);
+	}else{
+		one_line = true;
 	}
-	skip_op(OP_BRACE_R);
+
+	if(one_line){
+		std::cout << "push statement" << std::endl;
+		block->statements.push_back(parse_statement());
+		std::cout << "pushed statement: " << block->statements.back()->to_string() << std::endl;
+	}else{
+		while(!eof()){
+			if(is_op(OP_BRACE_R)) break;
+			if(first){
+				first = false;
+			}else{
+				skip_expr_end();
+			}
+			if(is_op(OP_BRACE_R)) break;
+			block->statements.push_back(parse_statement());
+		}
+		skip_op(OP_BRACE_R, true, false);
+	}
+	optional_expr_end = true;
+
 	return block;
 }
 
@@ -177,7 +293,7 @@ NIdentifier * Parser::parse_identifier(){
 	if(!is_id()){
 		expected_error("identifier");
 	}
-	NIdentifier * id = new NIdentifier(peek().str());
+	NIdentifier * id = new NIdentifier(peek().String());
 	advance();
 	return id;
 }
@@ -185,11 +301,10 @@ NIdentifier * Parser::parse_identifier(){
 NType * Parser::parse_type(){
 	// TODO: Rewrite for special types
 	if(!is_id()){
-		expected_error("identifier");
+		expected_error("type identifier");
 	}
-	NIdentifier * type_id = parse_identifier();
 
-	advance();
+	NIdentifier * type_id = parse_identifier();
 
 	bool nullable = false;
 	if(is_op(OP_QUESTION_MARK)){
@@ -197,15 +312,15 @@ NType * Parser::parse_type(){
 		advance();
 	}
 
-	return new NType(type_id, nullable);
+	return new NType(*type_id, nullable);
 }
 
 NVarDecl * Parser::parse_var_decl(){
 	const bool is_val = is_kw(KW_VAL);
 	advance();
+
 	NIdentifier * id = parse_identifier();
-	advance();
-	
+
 	NType * type = nullptr;
 	if(is_op(OP_COLON)){
 		advance();
@@ -222,7 +337,7 @@ NVarDecl * Parser::parse_var_decl(){
 }
 
 NFuncCall * Parser::parse_func_call(NExpression * left){
-	skip_op(OP_PAREN_L);
+	skip_op(OP_PAREN_L, false, true);
 	ExpressionList args;
 	while(!is_op(OP_PAREN_R) && !eof()){
 		args.push_back(parse_expression());
@@ -230,10 +345,10 @@ NFuncCall * Parser::parse_func_call(NExpression * left){
 			skip_expr_end();
 		}
 		if(!is_op(OP_PAREN_R)){
-			skip_op(OP_COMMA);
+			skip_op(OP_COMMA, true, true);
 		}
 	}
-	skip_op(OP_PAREN_R);
+	skip_op(OP_PAREN_R, true, false);
 	return new NFuncCall(*left, args);
 }
 
@@ -259,7 +374,7 @@ NArgDecl * Parser::parse_arg_declaration(){
 }
 
 ArgList Parser::parse_arg_declaration_list(){
-	skip_op(OP_PAREN_L);
+	skip_op(OP_PAREN_L, false, true);
 	ArgList args;
 	while(!is_op(OP_PAREN_R) && !eof()){
 		args.push_back(parse_arg_declaration());
@@ -267,21 +382,22 @@ ArgList Parser::parse_arg_declaration_list(){
 			expected_error("closing parenthesis `)`");
 		}
 		if(!is_op(OP_PAREN_R)){
-			skip_op(OP_COMMA);
+			skip_op(OP_COMMA, true, true);
 		}
 	}
-	skip_op(OP_PAREN_R);
+	skip_op(OP_PAREN_R, true, false);
 	return args;
 }
 
 NFuncDecl * Parser::parse_func_decl(){
-	skip_kw(KW_FUNC);
+	skip_kw(KW_FUNC, false, false);
 	NIdentifier * id = parse_identifier();
-	advance();
+
 	ArgList args = parse_arg_declaration_list();
 
 	NType * return_type = nullptr;
 	if(is_op(OP_COLON)){
+		advance();
 		return_type = parse_type();
 	}
 
@@ -294,31 +410,33 @@ NFuncDecl * Parser::parse_func_decl(){
 // Condition
 // 
 NCondition * Parser::parse_condition(){
-	skip_kw(KW_IF);
-	
+	skip_kw(KW_IF, false, true);
+
 	ConditionBlock If;
-	skip_op(OP_PAREN_L);
+	skip_op(OP_PAREN_L, true, true);
 	If.first = parse_expression();
-	skip_op(OP_PAREN_R);
+	skip_op(OP_PAREN_R, true, true);
 	If.second = parse_block();
 
 	std::vector <ConditionBlock> Elifs;
 	while(is_kw(KW_ELIF)){
-		skip_kw(KW_ELIF);
+		skip_kw(KW_ELIF, true, true);
 
 		ConditionBlock Elif;
-		skip_op(OP_PAREN_L);
+		skip_op(OP_PAREN_L, true, true);
 		Elif.first = parse_expression();
-		skip_op(OP_PAREN_R);
+		skip_op(OP_PAREN_R, true, true);
 
 		Elif.second = parse_block();
 
 		Elifs.push_back(Elif);
 	}
 
+	skip_endl(true);
+
 	NBlock * Else = nullptr;
 	if(is_kw(KW_ELSE)){
-		advance();
+		skip_kw(KW_ELSE, true, true);
 		Else = parse_block();
 	}
 
@@ -326,11 +444,11 @@ NCondition * Parser::parse_condition(){
 }
 
 NWhile * Parser::parse_while(){
-	skip_kw(KW_WHILE);
+	skip_kw(KW_WHILE, false, true);
 
-	skip_op(OP_PAREN_L);
+	skip_op(OP_PAREN_L, true, true);
 	NExpression * condition = parse_expression();
-	skip_op(OP_PAREN_R);
+	skip_op(OP_PAREN_R, true, true);
 
 	NBlock * block = parse_block();
 
@@ -338,9 +456,9 @@ NWhile * Parser::parse_while(){
 }
 
 NFor * Parser::parse_for(){
-	skip_kw(KW_FOR);
+	skip_kw(KW_FOR, false, true);
 
-	skip_op(OP_PAREN_L);
+	skip_op(OP_PAREN_L, true, true);
 
 	// TODO: Add (key, val)
 	NIdentifier * For;
@@ -351,9 +469,9 @@ NFor * Parser::parse_for(){
 		For = parse_identifier();
 	}
 
-	skip_op(OP_PAREN_R);
+	skip_op(OP_PAREN_R, true, true);
 
-	skip_kw(KW_IN);
+	skip_kw(KW_IN, true, true);
 
 	NExpression * In = parse_expression();
 
