@@ -43,22 +43,22 @@ int main(int argc, char const * argv[]){
 			std::cout << t->to_string() << std::endl;
 		}
 
-		Interpreter I;
-
-		I.interpret(tree);
-
 		std::chrono::duration<double> lexer_elapsed = lexer_finish - lexer_start;
 		std::chrono::duration<double> parser_elapsed = parser_finish - parser_start;
-		std::chrono::duration<double> eval_ms = eval_finish - eval_start;
 
 		int lexer_ms = lexer_elapsed.count() * 10e3;
 		int parser_ms = parser_elapsed.count() * 10e3;
 		std::cout << "Lexing was done in: " << lexer_ms << "ms" << std::endl;
 		std::cout << "Parsing was done in: " << parser_ms << "ms" << std::endl;
-		std::cout << "Evaluation was done in: " << eval_ms << "ms" << std::endl;
 
-	}catch (std::exception & e){
-	    std::cerr << e.what() << std::endl;
+	}catch(const std::invalid_argument & e){
+		std::cerr << "invalid_argument: " << e.what() << std::endl;
+	    return 1;
+	}catch(const std::out_of_range & e){
+		std::cerr << "out_of_range: " << e.what() << std::endl;
+	    return 1;
+	}catch(std::exception & e){
+	    std::cerr << "exception: " << e.what() << std::endl;
 	    return 1;
 	}
 

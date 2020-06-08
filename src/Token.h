@@ -42,8 +42,7 @@ enum Operator {
 	OP_ASSIGN_SHIFT_LEFT, OP_ASSIGN_SHIFT_RIGHT,
 
 	OP_PIPELINE,
-
-	// OP_OPEN_COMMENT, OP_CLOSE_COMMENT,
+	OP_ARROW,
 
 	// Punctuactions
 	// TODO: Think about creating separate type for puncts
@@ -51,8 +50,11 @@ enum Operator {
 	OP_BRACKET_L, OP_BRACKET_R,
 	OP_BRACE_L, OP_BRACE_R,
 	OP_COLON, OP_COMMA,
-	OP_MEMBER_ACCESS, OP_RANGE, OP_SPREAD,
-	OP_QUESTION_MARK, OP_NULL_COALESCING, OP_ELVIS,
+	OP_MEMBER_ACCESS,
+	OP_RANGE, OP_RANGE_INCL,
+	OP_SPREAD,
+	OP_QUESTION_MARK,
+	OP_ELVIS,
 	OP_SEMICOLON,
 
 	// Start of string operators
@@ -60,7 +62,7 @@ enum Operator {
 
 	OP_IN, OP_NOT_IN,
 	OP_AS, OP_AS_NULLABLE,
-	OP_RETURN
+	OP_IS, OP_NOT_IS
 };
 
 const std::vector <std::string> operators {
@@ -81,15 +83,17 @@ const std::vector <std::string> operators {
 	"<<=", ">>=",
 
 	"|>",
+	"=>",
 	
-	// "/*", "*/",
-
 	"(", ")",
 	"[", "]",
 	"{", "}",
 	":", ",",
-	".", "..", "...",
-	"?", "??", "?:",
+	".",
+	"..", "..=",
+	"...",
+	"?",
+	"?:",
 	";",
 
 	// String operators
@@ -97,7 +101,7 @@ const std::vector <std::string> operators {
 
 	"in", "!in",
 	"as", "as?",
-	"return"
+	"is", "!is"
 };
 
 inline Operator str_operator(const std::string & str){
@@ -105,19 +109,24 @@ inline Operator str_operator(const std::string & str){
 }
 
 enum Keyword {
-	KW_VAR, KW_VAL, KW_FUNC,
+	KW_VAR, KW_VAL, KW_FUNC, KW_TYPE,
 	KW_IF, KW_ELIF, KW_ELSE,
 	KW_FOR, KW_WHILE, KW_REPEAT,
-	KW_IN,
+	KW_BREAK, KW_CONTINUE,
+	KW_TRUE, KW_FALSE,
+	KW_MATCH,
+	KW_RETURN,
 	KW_MAX
 };
 
 const std::vector <std::string> keywords {
-	"var", "val", "func",
+	"var", "val", "func", "type",
 	"if", "elif", "else",
 	"for", "while", "repeat",
+	"break", "continue",
 	"true", "false",
-	"in"
+	"match",
+	"return"
 };
 
 inline Keyword str_to_kw(const std::string & str){
@@ -143,13 +152,18 @@ typedef unsigned char BYTE;
 // Note: As I tested, char* won't work properly in variant, because of setting by ref
 typedef std::variant<BYTE, int, double, std::string, Operator, Keyword> TokenVal;
 
+typedef struct {
+	uint32_t line;
+	uint32_t column;
+
+	// TODO: Think about containing `index` as index of token in the code
+} Position;
+
 struct Token {
 	TokenType type;
 	TokenVal val;
 
-	// Trace
-	uint32_t line = 0;
-	uint32_t column = 0;
+	Position pos;
 
 	Token(const TokenType & t, const std::string & v){
 		type = t;
@@ -163,6 +177,7 @@ struct Token {
 				break;
 			}
 			case T_INT:{
+				std::cout << "Convert to int: " << v << std::endl;
 				val = std::stoi(v);
 				break;
 			}
@@ -221,7 +236,7 @@ struct Token {
 
 	// Errors
 	void error(const std::string & msg){
-		err(msg + " " + to_string(), line, column);
+		err(msg + " " + to_string(), pos.line, pos.column);
 	}
 	void unexpected_error(){
 		error("Unexpected token");
@@ -266,7 +281,7 @@ struct Token {
 		token_str += "`";
 
 		if(with_pos){
-			token_str += " at " + std::to_string(line) + ":" + std::to_string(column);
+			token_str += " at " + std::to_string(pos.line) + ":" + std::to_string(pos.column);
 		}
 		// TODO: Add op and kw to string
 

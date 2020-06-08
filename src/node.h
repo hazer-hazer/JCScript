@@ -4,8 +4,7 @@
 #include <vector>
 
 #include "Token.h"
-#include "Value.h"
-#include "Scope.h"
+#include "Object.h"
 
 struct NStatement;
 struct NExpression;
@@ -30,24 +29,36 @@ struct Node {
 	Node(){}
 	virtual ~Node() = default;
 
-	virtual Value * eval(const Scope & scope) {}
+	// For errors in Node, sometimes position is the position of the last Token in statement or expression
+	Position pos;
+
+	virtual void error(const std::string msg){
+		err(msg + " at " + pos.line + ":" + pos.column);
+	}
 
 	virtual std::string to_string(){
 		return "[NODE]";
 	}
+
+	virtual Object * eval(Scope * scope);
 };
 
 struct NExpression : Node {
 	virtual std::string to_string() override {
 		return "[NExpression]";
 	}
+
+	virtual Object * eval(Scope * scope) override;
 };
 
-inline std::string expression_list_to_string(const ExpressionList & expression_list){
+inline std::string expression_list_to_string(const ExpressionList & expression_list, const std::string & sep){
 	std::string str;
 
-	for(NExpression * e : expression_list){
-		str += e->to_string() + '\n';
+	for(int i = 0; i < expression_list.size(); i++){
+		str += expression_list[i]->to_string();
+		if(i != expression_list.size() - 1){
+			str += sep;
+		}	
 	}
 
 	return str;
@@ -57,6 +68,8 @@ struct NStatement : Node {
 	virtual std::string to_string() override {
 		return "[NStatement]";
 	}
+
+	virtual Object * eval(Scope * scope) override;
 };
 
 inline std::string statement_list_to_string(const StatementList & statements){
@@ -72,13 +85,14 @@ inline std::string statement_list_to_string(const StatementList & statements){
 struct NExpressionStatement : NStatement {
 	NExpression & expression;
 
-	NExpressionStatement(NExpression & expr) : expression(expr) {}
-
-	virtual Value * eval(const Scope & scope);
+	NExpressionStatement(NExpression & expr, const Position & pos)
+						: expression(expr), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NExpressionStatement]: " + expression.to_string();
+		return expression.to_string();
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 /////////////////
@@ -87,47 +101,47 @@ struct NExpressionStatement : NStatement {
 
 struct NInt : NExpression {
 	int value;
-	NInt(const int & value) : value(value) {}
-
-	virtual Value * eval(const Scope & scope);
+	NInt(const int & value, const Position & pos) : value(value), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NInt]: " + std::to_string(value);
+		return std::to_string(value);
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 // Note: NFloat contains 64-bit precision number like double does
 struct NFloat : NExpression {
 	double value;
-	NFloat(const double & value) : value(value) {}
-
-	virtual Value * eval(const Scope & scope);
+	NFloat(const double & value, const Position & pos) : value(value), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NFloat]: " + std::to_string(value);
+		return std::to_string(value);
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NBool : NExpression {
 	bool value;
-	NBool(const bool & value) : value(value) {}
-
-	virtual Value * eval(const Scope & scope);
+	NBool(const bool & value, const Position & pos) : value(value), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NBool]: " + std::to_string(value);
+		return (value ? "true" : "false");
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NString : NExpression {
 	std::string value;
-	NString(const std::string & value) : value(value) {}
-
-	virtual Value * eval(const Scope & scope);
+	NString(const std::string & value, const Position & pos) : value(value), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NString]: " + value;
+		return "'" + value + "'";
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 //////////////////
@@ -137,35 +151,32 @@ struct NString : NExpression {
 struct NIdentifier : NExpression {
 	std::string name;
 
-	NIdentifier(const std::string & name){
+	NIdentifier(const std::string & name, const Position & pos){
 		this->name = name;
 	}
 
-	bool operator == (const NIdentifier & id1, const NIdentifier & id2){
-		return id1.name == id2.name;
-	}
-
-	virtual Value * eval(const Scope & scope);
-
 	virtual std::string to_string() override {
-		return "[NIdentifier]: " + name;
+		return "[NIdentifier] " + name;
 	}
+
+	virtual bool compare(const NIdentifier & id){
+		return name == id.name;
+	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NBlock : NExpression {
 	StatementList statements;
-	NBlock(){}
 
-	virtual Value * eval(const Scope & scope);
+	NBlock(const Position & pos) : pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NBlock]: " + statement_list_to_string(statements);
+		return "[NBlock] " + statement_list_to_string(statements);
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
-
-inline std::string condition_block_to_string(const ConditionBlock & cb){
-	return cb.first->to_string() + " " + cb.second->to_string();
-}
 
 ////////////////////
 // Operator nodes //
@@ -176,40 +187,42 @@ struct NInfixOp : NExpression {
 	Operator op;
 	NExpression & right;
 
-	NInfixOp(NExpression & left, const Operator & op, NExpression & right)
-		: left(left), op(op), right(right) {}
-
-	virtual Value * eval(const Scope & scope);
+	NInfixOp(NExpression & left, const Operator & op, NExpression & right, const Position & pos)
+			: left(left), op(op), right(right), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NInfixOp]: " + left.to_string() + " " + op_to_str(op) + " " + right.to_string();
+		return "[NInfixOp] " + left.to_string() + " " + op_to_str(op) + " " + right.to_string();
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NPrefixOp : NExpression {
 	Operator op;
 	NExpression & right;
 
-	NPrefixOp(const Operator & op, NExpression & right) : op(op), right(right) {}
-
-	virtual Value * eval(const Scope & scope);
+	NPrefixOp(const Operator & op, NExpression & right, const Position & pos)
+			 : op(op), right(right), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NPrefixOp]: " + op_to_str(op) + " " + right.to_string();
+		return "[NPrefixOp] " + op_to_str(op) + " " + right.to_string();
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NPostfixOp : NExpression {
 	NExpression & left;
 	Operator op;
 
-	NPostfixOp(NExpression & left, const Operator & op) : left(left), op(op) {}
-
-	virtual Value * eval(const Scope & scope);
+	NPostfixOp(NExpression & left, const Operator & op, const Position & pos)
+			  : left(left), op(op), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NPostfixOp]: " + left.to_string() + " " + op_to_str(op);
+		return "[NPostfixOp] " + left.to_string() + " " + op_to_str(op);
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 // NType contains special type syntax
@@ -217,16 +230,94 @@ struct NPostfixOp : NExpression {
 // Or it can be list of allowed types ([string, int])
 // TODO: Add special types like array
 struct NType : NExpression {
-	NIdentifier & id;
-	bool nullable;
+	bool nullable = false;
 
-	NType(NIdentifier & id, bool & nullable) : id(id), nullable(nullable) {}
-
-	virtual Value * eval(const Scope & scope);
+	NType(const Position & pos) : pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NType]: " + id.to_string() + (nullable ? "?" : "");
+		return "[NType]";
 	}
+
+	virtual bool compare(NType * type) {
+		return type->nullable == nullable;
+	}
+	
+	virtual Object * eval(Scope * scope) override;
+};
+
+struct NIdentifierType : NType {
+	NIdentifier & id;
+
+	NIdentifierType(NIdentifier & id, const Position & pos) : id(id), pos(pos) {}
+
+	virtual std::string to_string() override {
+		return id.to_string() + (nullable ? "?" : "");
+	}
+
+	virtual bool compare(NType * type) override {
+		NIdentifierType * id_type = dynamic_cast<NIdentifierType*>(type);
+		return id_type && NType::compare(type) && id.compare(id_type->id);
+	}
+	
+	virtual Object * eval(Scope * scope) override;
+};
+
+struct NListType : NType {
+	NType & wrapped_type;
+	
+	NListType(NType & wrapped_type, const Position & pos)
+			 : wrapped_type(wrapped_type), pos(pos) {}
+
+	virtual std::string to_string() override {
+		return "[" + wrapped_type.to_string() + "]" + (nullable ? "?" : "");
+	}
+
+	virtual bool compare(NType * type) override {
+		NListType * list_type = dynamic_cast<NListType*>(type);
+		return list_type && NType::compare(type) && wrapped_type.compare(&list_type->wrapped_type);
+	}
+	
+	virtual Object * eval(Scope * scope) override;
+};
+
+struct NTupleType : NType {
+	std::vector <NType*> types;
+
+	// TODO: Add default values
+
+	NTupleType(const std::vector <NType*> types, const Position & pos)
+			  : types(types), pos(pos) {}
+
+	virtual std::string to_string() override {
+		std::string str = "(";
+		for(int i = 0; i < types.size(); i++){
+			str += types[i]->to_string();
+			if(i < types.size() - 1){
+				str += ", ";
+			}
+		}
+		return str + ")";
+	}
+
+	virtual bool compare(NType * type) override {
+		NTupleType * tuple_type = dynamic_cast<NTupleType*>(type);
+
+		bool types_comparison = true;
+		if(types.size() != tuple_type->types.size()){
+			types_comparison = false;
+		}else{
+			for(int i = 0; i < types.size(); i++){
+				if(types[i]->compare(tuple_type->types[i])){
+					types_comparison = false;
+					break;
+				}
+			}
+		}
+
+		return tuple_type && NType::compare(type) && types_comparison; 
+	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 // In type declaration there cannot be any case when it's declared but not defined
@@ -236,13 +327,14 @@ struct NTypeDecl : NStatement {
 	NIdentifier & id;
 	NType & type;
 
-	NTypeDecl(NIdentifier & id, NType & type) : id(id), type(type) {}
-
-	virtual Value * eval(const Scope & scope);
+	NTypeDecl(NIdentifier & id, NType & type, const Position & pos)
+			 : id(id), type(type), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NTypeDecl]: " + id.to_string() + " = " + type.to_string();
+		return "type "+ id.to_string() +" = "+ type.to_string();
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NVarDecl : NStatement {
@@ -254,19 +346,20 @@ struct NVarDecl : NStatement {
 	// Note: Type automatically set to `any` by default in Parser
 	NVarDecl(const bool & is_val,
 			 NIdentifier & id,
-			 NType & type,
-			 NExpression * assignment_expr)
-			: is_val(is_val), id(id), type(type), assignment_expr(assignment_expr) {}
+			 NType * type,
+			 NExpression * assignment_expr,
+			 const Position & pos)
+			: is_val(is_val), id(id), type(type),
+			  assignment_expr(assignment_expr), pos(pos) {}
 
-
-	virtual Value * eval(const Scope & scope);
 
 	virtual std::string to_string() override {
-		return std::string("[NVarDecl]: ") +
-				(is_val ? "val" : "var") + " " + id.to_string() +
-				(type != nullptr ? ": " + type->to_string() : "") +
-				(assignment_expr != nullptr ? " = " + assignment_expr->to_string() : "");
+		return std::string(is_val ? "val" : "var") + " " + id.to_string() + ": " +
+			   (type ? type->to_string() : "any") +
+			   (assignment_expr ? " = " + assignment_expr->to_string() : "");
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 inline std::string var_list_to_string(const VarList & var_list){
@@ -284,16 +377,16 @@ struct NArgDecl : NStatement {
 	NType * type;
 	NExpression * default_value;
 
-	NArgDecl(NIdentifier & id, NType * type, NExpression * default_value)
-			: id(id), type(type), default_value(default_value) {}
-
-	virtual Value * eval(const Scope & scope);
+	NArgDecl(NIdentifier & id, NType * type, NExpression * default_value, const Position & pos)
+			: id(id), type(type), default_value(default_value), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NArgDecl]: " + id.to_string() + 
-				(type != nullptr ? ": " + type->to_string() : "") +
-				(default_value != nullptr ? " = " + default_value->to_string() : "");
+		return id.to_string() + 
+			   (type != nullptr ? ": " + type->to_string() : "") +
+			   (default_value != nullptr ? " = " + default_value->to_string() : "");
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 inline std::string arg_list_to_string(const ArgList & arg_list){
@@ -308,14 +401,26 @@ struct NFuncCall : NExpression {
 	NExpression & left;
 	ExpressionList args;
 
-	NFuncCall(NExpression & left, const ExpressionList & args)
-			: left(left), args(args) {}
-
-	virtual Value * eval(const Scope & scope);
+	NFuncCall(NExpression & left, const ExpressionList & args, const Position & pos)
+			: left(left), args(args), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NFuncCall]: " + left.to_string() + "(" + expression_list_to_string(args) + ")";
+		return "[NFuncCall] " + left.to_string() + "(" + expression_list_to_string(args, ", ") + ")";
 	}
+	
+	virtual Object * eval(Scope * scope) override;
+};
+
+struct NReturn : NStatement {
+	NExpression * right;
+
+	NReturn(NExpression * right, const Position & pos) : right(right), pos(pos) {}
+
+	virtual std::string to_string() override {
+		return "return " + (right ? right->to_string() : "");
+	}
+
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NFuncDecl : NStatement {
@@ -327,18 +432,59 @@ struct NFuncDecl : NStatement {
 	NFuncDecl(NIdentifier & id,
 			  const ArgList & args,
 			  NType * return_type,
-			  NBlock & block)
-			: id(id), args(args), return_type(return_type), block(block) {}
-
-	virtual Value * eval(const Scope & scope);
+			  NBlock & block,
+			  const Position & pos)
+			: id(id), args(args), return_type(return_type), block(block), pos(pos) {}
 
 	virtual std::string to_string() override {
-		return "[NFuncCall]: " + id.to_string() + "(" + arg_list_to_string(args) + ")" +
+		return  "func " + id.to_string() + "(" + arg_list_to_string(args) + ")" +
 				(return_type != nullptr ? ": " + return_type->to_string() : "") +
 				"{\n" + block.to_string() + "\n}";
 	}
-};
 	
+	virtual Object * eval(Scope * scope) override;
+};
+
+
+inline std::string condition_block_to_string(const std::string & cond_name, const ConditionBlock & cb){
+	return cond_name +"("+ cb.first->to_string() +"){\n"+ cb.second->to_string() + "\n}";
+}
+
+struct NListAccess : NExpression {
+	NExpression & left;
+	NExpression & access;
+
+	NListAccess(NExpression & left, NExpression & access, const Position & pos)
+			   : left(left), access(access), pos(pos) {}
+
+
+	virtual std::string to_string() override {
+		return "[NListAccess] " + left.to_string() + "[" + access.to_string() + "]";
+	}
+	
+	virtual Object * eval(Scope * scope) override;
+};
+
+struct NList : NExpression {
+	ExpressionList expressions;
+
+	NList(const ExpressionList & expressions, const Position & pos)
+		 : expressions(expressions), pos(pos) {}
+
+	virtual std::string to_string() override {
+		std::string str = "[";
+		for(int i = 0; i < expressions.size(); i++){
+			str += expressions[i]->to_string();
+			if(i < expressions.size() - 1){
+				str += ", ";
+			}
+		}
+		return str + "]";
+	}
+	
+	virtual Object * eval(Scope * scope) override;
+};
+
 // Note: !Important! `if` is an expression
 // and can be used as statement by `NExpressionStatement`
 struct NCondition : NExpression {
@@ -348,38 +494,75 @@ struct NCondition : NExpression {
 
 	NCondition(ConditionBlock & If,
 			   const std::vector <ConditionBlock> & Elifs,
-			   NBlock * Else)
-			: If(If), Elifs(Elifs), Else(Else) {}
+			   NBlock * Else,
+			   const Position & pos)
+			  : If(If), Elifs(Elifs), Else(Else), pos(pos) {}
 
-	virtual Value * eval(const Scope & scope);
-
-	virtual std::string to_string(){
+	virtual std::string to_string() override {
 		std::string elifs_str;
 		for(const ConditionBlock & cb : Elifs){
-			elifs_str += condition_block_to_string(cb) + '\n';
+			elifs_str += condition_block_to_string("elif", cb) + '\n';
 		}
-		return "[NCondition]: " + condition_block_to_string(If) + " " +
-				elifs_str + " " + (Else != nullptr ? Else->to_string() : "");
+		return condition_block_to_string("if", If) +"\n"+
+			   elifs_str + "else{" + (Else != nullptr ? Else->to_string() : "") + "}";
 	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
 struct NWhile : NStatement {
 	NExpression & condition;
 	NBlock & block;
 
-	NWhile(NExpression & condition, NBlock & block)
-		: condition(condition), block(block) {}
+	NWhile(NExpression & condition, NBlock & block, const Position & pos)
+		  : condition(condition), block(block), pos(pos) {}
 
-	virtual Value * eval(const Scope & scope);
+	virtual std::string to_string() override {
+		return "while("+ condition.to_string() +"){\n"+ block.to_string() +"\n}";
+	}
+	
+	virtual Object * eval(Scope * scope) override;
 };
 
+// TODO: Think about for `For`
+// For must be any expression like (key, val) or val and etc.
 struct NFor : NStatement {
 	NIdentifier & For;
 	NExpression & In;
+	NBlock & block;
 
-	NFor(NIdentifier & For, NExpression & In) : For(For), In(In) {}
+	NFor(NIdentifier & For, NExpression & In, NBlock & block, const Position & pos)
+		: For(For), In(In), block(block), pos(pos) {}
+
+	virtual std::string to_string() override {
+		return "for("+ For.to_string() +" in "+ In.to_string() +"){\n"+ block.to_string() +"\n}";
+	}
 	
-	virtual Value * eval(const Scope & scope);
+	virtual Object * eval(Scope * scope) override;
 };
 
-#endif
+typedef std::pair<ExpressionList, NBlock*> MatchCase;
+
+struct NMatch : NStatement {
+	NExpression & expression;
+	std::vector <MatchCase> Cases;
+	NBlock * Else;
+
+	NMatch(NExpression & expression,
+		   const std::vector <MatchCase> Cases,
+		   NBlock * Else,
+		   const Position & pos)
+		 : expression(expression), Cases(Cases), Else(Else), pos(pos) {}
+
+	virtual std::string to_string() override {
+		std::string cases_string;
+		for(const auto & Case : Cases){
+			cases_string += expression_list_to_string(Case.first, ", ") +" => "+ Case.second->to_string() +"";
+		}
+		return "match("+ expression.to_string() +"){\n" + cases_string + "else => " + (Else ? Else->to_string() : "") +"}";
+	}
+	
+	virtual Object * eval(Scope * scope) override;
+};
+
+#endif // NODE_H

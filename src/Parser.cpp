@@ -46,14 +46,14 @@ bool Parser::is_kw(const Keyword & kw){
 	return is_kw() && peek().kw() == kw;
 }
 
-bool Parser::is_infix_op(const Operator & op){
-	return OP_INFIX_PREC.find(op) != OP_INFIX_PREC.end();
+bool Parser::is_infix_op(){
+	return is_op() && OP_INFIX_PREC.find(peek().op()) != OP_INFIX_PREC.end();
 }
-bool Parser::is_prefix_op(const Operator & op){
-	return OP_PREFIX_PREC.find(op) != OP_PREFIX_PREC.end();
+bool Parser::is_prefix_op(){
+	return is_op() && OP_PREFIX_PREC.find(peek().op()) != OP_PREFIX_PREC.end();
 }
-bool Parser::is_postfix_op(const Operator & op){
-	return OP_POSTFIX_PREC.find(op) != OP_POSTFIX_PREC.end();
+bool Parser::is_postfix_op(){
+	return is_op() && OP_POSTFIX_PREC.find(peek().op()) != OP_POSTFIX_PREC.end();
 }
 
 // Skippers
@@ -102,7 +102,7 @@ void Parser::skip_kw(const Keyword & kw, const bool & skip_left_endl, const bool
 
 // Errors
 void Parser::error(const std::string & msg){
-	err("Parser [ERROR]: " + msg, peek().line, peek().line);
+	err("Parser [ERROR]: " + msg, peek().pos.line, peek().pos.line);
 }
 void Parser::expected_error(const std::string & expected, const std::string & given){
 	error("Expected " + expected + ", " + given + " given");
@@ -125,9 +125,7 @@ StatementList Parser::parse(const std::vector <Token> & tokens){
 	this->tokens = tokens;
 
 	while(!eof()){
-		std::cout << "Parse statement: " << peek().to_string() << std::endl;
 		NStatement * statement = parse_statement();
-		std::cout << "pushing statement:" << statement->to_string() << " " << peek().to_string() << std::endl;
 		if(statement != nullptr){
 			tree.push_back(statement);
 		}
@@ -142,6 +140,11 @@ StatementList Parser::parse(const std::vector <Token> & tokens){
 }
 
 NStatement * Parser::parse_statement(){
+	if(is_expr_end()){
+		// Skip lines with expr_end only
+		advance();
+		return parse_statement();
+	}
 	if(is_kw()){
 		switch(peek().kw()){
 			case KW_VAR:
@@ -149,47 +152,93 @@ NStatement * Parser::parse_statement(){
 				return parse_var_decl();
 				break;
 			}
+			case KW_TYPE:{
+				return parse_type_decl();
+			}
 			case KW_FUNC:{
 				return parse_func_decl();
 				break;
 			}
+			case KW_MATCH:{
+				return parse_match();
+				break;
+			}
+			case KW_RETURN:{
+				Position pos = peek().pos;
+				advance();
+				NExpression * return_expr = nullptr;
+				if(!is_expr_end()){
+					return_expr = parse_expression();
+				}
+				return new NReturn(return_expr, pos);
+			}
 		}
 	}else{
-		if(is_expr_end()){
-			// Skip statement that is just only a semicolon
-			advance();
-			return parse_statement();
-		}
-		NExpressionStatement * expression_statement = new NExpressionStatement(*parse_expression());
-		std::cout << "Parsed expression_statement: " << expression_statement->to_string() << std::endl;
-		return expression_statement;
+		return new NExpressionStatement(*parse_expression(), peek().pos);
 	}
 
 	return nullptr;
 }
+
 NExpression * Parser::parse_expression(){
-	NExpression * expression = maybe_infix(parse_atom(), 0);
+	NExpression * expression = parse_atom();
+	
+	while(!eof()){
+		// Check for chain of function call or list access or infix operator
+		if(is_op(OP_PAREN_L)){
+			expression = parse_func_call(expression);
+		}else if(is_op(OP_BRACKET_L)){
+			expression = parse_list_access(expression);
+		}else if(is_infix_op()){
+			expression = maybe_infix(expression, 0);
+		}else{
+			break;
+		}
+	}
 
 	return expression;
 }
 
 NExpression * Parser::maybe_infix(NExpression * left, int prec){
-	if(!is_op()){
-		return left;
-	}
-	Operator op = peek().op();
-	if(is_infix_op(op)){
+	if(is_infix_op()){
+		Operator op = peek().op();
 		int right_prec = OP_INFIX_PREC.at(op);
 		if(right_prec > prec){
+			Position pos;
 			advance();
-			return maybe_infix(new NInfixOp(*left, op, *maybe_infix(parse_atom(), right_prec)), prec);
+			return maybe_infix(new NInfixOp(*left, op, *maybe_infix(parse_atom(), right_prec), pos), prec);
 		}
 	}
 	return left;
 }
 
+NExpression * Parser::maybe_call(NExpression * left){
+	// if(allow_func_call && is_op(OP_PAREN_L)){
+	// 	allow_func_call = false;
+	// 	return parse_func_call(left);
+	// return left;
+	
+	return left;
+}
+
+NExpression * Parser::maybe_list_access(NExpression * left){
+	// if(is_op(OP_BRACKET_L)){
+	// 	NExpression * access = parse_expression();
+	// 	return new NListAccess(*left, *access);
+	// }
+
+	return left;
+}
+
+NListAccess * Parser::parse_list_access(NExpression * left){
+	skip_op(OP_BRACKET_L, false, true);
+	NExpression * access = parse_expression();
+	skip_op(OP_BRACKET_R, true, false);
+
+	return new NListAccess(*left, *access);
+}
+
 NExpression * Parser::parse_atom(){
-	std::cout << "parse_atom: " << peek().to_string() << std::endl;
 
 	/*if(is_endl()){
 		// Skip end_of_line
@@ -219,20 +268,41 @@ NExpression * Parser::parse_atom(){
 		skip_op(OP_PAREN_L, true, true);
 		NExpression * expression = parse_expression();
 		skip_op(OP_PAREN_R, true, false);
+		
+		// TODO: Think about allow_func_call after subexpression
+		
 		return expression;
+	}
+	if(is_op(OP_BRACKET_L)){
+		skip_op(OP_BRACKET_L, false, true);
+		ExpressionList expressions;
+		bool first = true;
+		while(!eof()){
+			if(is_op(OP_BRACKET_R)){
+				break;
+			}
+			if(first){
+				first = false;
+			}else{
+				skip_op(OP_COMMA, true, true);
+			}
+			expressions.push_back(parse_expression());
+		}
+
+		skip_op(OP_BRACKET_R, true, false);
+
+		return new NList(expressions);
 	}
 	if(is_str()){
 		NString * str = new NString(peek().String());
 		advance();
 		return str;
 	}
-	if(is_op()){
+	if(is_prefix_op()){
+		// Parse prefix operator
 		Operator op = peek().op();
-		// Prefix operator
-		if(is_prefix_op(op)){
-			advance();
-			return new NPrefixOp(op, *parse_expression());
-		}
+		advance();
+		return new NPrefixOp(op, *parse_expression());
 	}
 	if(is_kw()){
 		switch(peek().kw()){
@@ -244,6 +314,7 @@ NExpression * Parser::parse_atom(){
 	}
 	if(is_id()){
 		NIdentifier * id = new NIdentifier(peek().String());
+		allow_func_call = true;
 		advance();
 		return id;
 	}
@@ -268,9 +339,7 @@ NBlock * Parser::parse_block(){
 	}
 
 	if(one_line){
-		std::cout << "push statement" << std::endl;
 		block->statements.push_back(parse_statement());
-		std::cout << "pushed statement: " << block->statements.back()->to_string() << std::endl;
 	}else{
 		while(!eof()){
 			if(is_op(OP_BRACE_R)) break;
@@ -299,20 +368,71 @@ NIdentifier * Parser::parse_identifier(){
 }
 
 NType * Parser::parse_type(){
-	// TODO: Rewrite for special types
-	if(!is_id()){
-		expected_error("type identifier");
+
+	NType * type = nullptr;
+
+	if(is_op(OP_BRACKET_L)){
+		type = parse_list_type();
+	}else if(is_op(OP_PAREN_L)){
+		type = parse_tuple_type();
+	}else if(is_id()){
+		type = new NIdentifierType(*parse_identifier());
+	}else{
+		unexpected_error();
+		return nullptr;
 	}
 
-	NIdentifier * type_id = parse_identifier();
-
-	bool nullable = false;
 	if(is_op(OP_QUESTION_MARK)){
-		nullable = true;
+		type->nullable = true;
 		advance();
 	}
 
-	return new NType(*type_id, nullable);
+	return type;
+}
+
+NListType * Parser::parse_list_type(){
+	skip_op(OP_BRACKET_L, false, false);
+	NType * wrapped_type = parse_type();
+	skip_op(OP_BRACKET_R, false, false);
+
+	return new NListType(*wrapped_type);
+}
+
+NTupleType * Parser::parse_tuple_type(){
+	// TODO: Add tuple var names and maybe default values
+
+	skip_op(OP_PAREN_L, false, false);
+
+	std::vector <NType*> types;
+
+	bool first = true;
+	while(!eof()){
+		if(is_op(OP_PAREN_R)){
+			break;
+		}
+		if(first){
+			first = false;
+		}else{
+			skip_op(OP_COMMA, false, false);
+		}
+		types.push_back(parse_type());
+	}
+
+	skip_op(OP_PAREN_R, false, false);
+
+	return new NTupleType(types);
+}
+
+NTypeDecl * Parser::parse_type_decl(){
+	skip_kw(KW_TYPE, false, false);
+
+	NIdentifier * id = parse_identifier();
+
+	skip_op(OP_ASSIGN, false, false);
+
+	NType * type = parse_type();
+
+	return new NTypeDecl(*id, *type);
 }
 
 NVarDecl * Parser::parse_var_decl(){
@@ -321,6 +441,7 @@ NVarDecl * Parser::parse_var_decl(){
 
 	NIdentifier * id = parse_identifier();
 
+	// Note: Default type is any (not nullable)
 	NType * type = nullptr;
 	if(is_op(OP_COLON)){
 		advance();
@@ -469,11 +590,73 @@ NFor * Parser::parse_for(){
 		For = parse_identifier();
 	}
 
-	skip_op(OP_PAREN_R, true, true);
-
-	skip_kw(KW_IN, true, true);
+	skip_op(OP_IN, true, true);
 
 	NExpression * In = parse_expression();
 
-	return new NFor(*For, *In);
+	skip_op(OP_PAREN_R, true, true);
+
+	NBlock * block = parse_block();
+
+	return new NFor(*For, *In, *block);
+}
+
+NMatch * Parser::parse_match(){
+	skip_kw(KW_MATCH, false, true);
+
+	skip_op(OP_PAREN_L, true, true);
+	NExpression * expression = parse_expression();
+	skip_op(OP_PAREN_R, true, true);
+
+	skip_op(OP_BRACE_L, true, true);
+
+	std::vector <MatchCase> Cases;
+
+	NBlock * Else;
+
+	while(!eof()){
+		if(is_op(OP_BRACE_R)){
+			break;
+		}
+		// Parse cases
+		MatchCase Case;
+		bool first = true;
+		bool is_else = false;
+		while(!eof()){
+			// Parse left hand expressions
+			if(is_op(OP_ARROW)){
+				break;
+			}
+			if(first){
+				first = false;
+			}else{
+				skip_op(OP_COMMA, true, true);
+			}
+			if(is_kw(KW_ELSE)){
+				is_else = true;
+				advance();
+				break;
+			}
+			Case.first.push_back(parse_expression());
+		}
+
+		if(!is_else && Case.first.size() == 0){
+			expected_error("Left hand expression");
+		}
+
+		skip_op(OP_ARROW, false, true);
+
+		if(is_else){
+			Else = parse_block();
+			break;
+		}else{
+			Case.second = parse_block();
+			skip_expr_end();
+			Cases.push_back(Case);
+		}
+	}
+
+	skip_op(OP_BRACE_R, true, true);
+
+	return new NMatch(*expression, Cases, Else);
 }

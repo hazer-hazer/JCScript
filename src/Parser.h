@@ -6,14 +6,17 @@
 #include "Node.h"
 
 const std::map <Operator, int> OP_INFIX_PREC {
-	{OP_ASSIGN, 3}, {OP_ASSIGN_ADD, 3}, {OP_ASSIGN_SUB, 3},
-	{OP_ASSIGN_MUL, 3}, {OP_ASSIGN_DIV, 3}, {OP_ASSIGN_MOD, 3},
-	{OP_ASSIGN_EXP, 3}, {OP_ASSIGN_BIT_OR, 3}, {OP_ASSIGN_BIT_AND, 3},
+	{OP_PIPELINE, 2},
+
+	{OP_ASSIGN, 3},
+	{OP_ASSIGN_ADD, 3}, {OP_ASSIGN_SUB, 3}, {OP_ASSIGN_MUL, 3},
+	{OP_ASSIGN_DIV, 3}, {OP_ASSIGN_MOD, 3}, {OP_ASSIGN_EXP, 3},
+
+	{OP_ASSIGN_BIT_AND, 3}, {OP_ASSIGN_BIT_OR, 3},
 	{OP_ASSIGN_BIT_XOR, 3}, {OP_ASSIGN_SHIFT_LEFT, 3}, {OP_ASSIGN_SHIFT_RIGHT, 3},
 
 	{OP_OR, 5},
 	{OP_AND, 6},
-	{OP_NULL_COALESCING, 7},
 	{OP_BIT_OR, 8},
 	{OP_BIT_XOR, 9},
 	{OP_BIT_AND, 10},
@@ -21,24 +24,33 @@ const std::map <Operator, int> OP_INFIX_PREC {
 
 	{OP_LESS, 12}, {OP_LESS_EQUAL, 12}, {OP_GREATER, 12},
 	{OP_GREATER_EQUAL, 12}, {OP_SPACESHIP, 12},
-	
-	{OP_SHIFT_LEFT, 13}, {OP_SHIFT_RIGHT, 13},
-	{OP_ADD, 14}, {OP_SUB, 14},
-	{OP_MUL, 15}, {OP_DIV, 15}, {OP_MOD, 15},
-	{OP_EXP, 16},
 
-	{OP_MEMBER_ACCESS, 18}
+	{OP_IN, 13}, {OP_NOT_IN, 13}, {OP_IS, 13, OP_NOT_IS, 13},
+
+	{OP_ELVIS, 14},
+
+	{OP_SHIFT_LEFT, 15}, {OP_SHIFT_RIGHT, 15},
+
+	{OP_RANGE, 16}, {OP_RANGE_INCL, 16},
+	
+	{OP_ADD, 17}, {OP_SUB, 17},
+	{OP_MUL, 18}, {OP_DIV, 18}, {OP_MOD, 18},
+
+	{OP_EXP, 19},
+
+	{OP_AS, 20}, {OP_AS_NULLABLE, 20},
+
+	{OP_MEMBER_ACCESS, 25}
 };
 
 const std::map <Operator, int> OP_PREFIX_PREC {
 	{OP_SPREAD, 1},
-	{OP_RETURN, 1},
-	{OP_INC, 17}, {OP_DEC, 17}, {OP_ADD, 17}, {OP_SUB, 17},
-	{OP_BIT_INVERT, 17}, {OP_NOT, 17}
+	{OP_INC, 21}, {OP_DEC, 21}, {OP_ADD, 21}, {OP_SUB, 21},
+	{OP_BIT_INVERT, 21}, {OP_NOT, 21}
 };
 
 const std::map <Operator, int> OP_POSTFIX_PREC {
-	{OP_INC, 18}, {OP_DEC, 18}
+	{OP_INC, 22}, {OP_DEC, 22}
 };
 
 class Parser {
@@ -70,9 +82,9 @@ class Parser {
 		bool is_op(const Operator & op);
 		bool is_kw(const Keyword & kw);
 
-		bool is_infix_op(const Operator & op);
-		bool is_prefix_op(const Operator & op);
-		bool is_postfix_op(const Operator & op);
+		bool is_infix_op();
+		bool is_prefix_op();
+		bool is_postfix_op();
 
 		// Skippers
 		void skip_endl(const bool & optional = false);
@@ -101,13 +113,25 @@ class Parser {
 		NBlock * parse_block();
 
 		// Maybe's
+		bool allow_func_call = false;
+		// bool allow_list_access = false; // ????
 		NExpression * maybe_infix(NExpression * left, int prec);
+		NExpression * maybe_call(NExpression * left);
+		NExpression * maybe_list_access(NExpression * left);
 
 		// Value
 		NIdentifier * parse_identifier();
+
+		// List
+		NListAccess * parse_list_access(NExpression * left);
 		
 		// Type
 		NType * parse_type();
+		NListType * parse_list_type();
+		NTupleType * parse_tuple_type();
+
+		// Type declaration
+		NTypeDecl * parse_type_decl();
 
 		// Variable
 		NVarDecl * parse_var_decl();
@@ -128,6 +152,9 @@ class Parser {
 
 		// For
 		NFor * parse_for();
+
+		// Match
+		NMatch * parse_match();
 };
 
 #endif

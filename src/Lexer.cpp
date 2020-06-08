@@ -28,14 +28,14 @@ char Lexer::advance(){
 
 void Lexer::add_token(const TokenType & type, const std::string & val){
 	Token t(type, val);
-	t.line = line;
-	t.column = column;
+	t.pos.line = line;
+	t.pos.column = column;
 	tokens.push_back(t);
 }
 void Lexer::add_token(const Operator & op){
 	Token t(op);
-	t.line = line;
-	t.column = column;
+	t.pos.line = line;
+	t.pos.column = column;
 	tokens.push_back(t);
 }
 
@@ -70,7 +70,7 @@ bool Lexer::is_quote(const char & c){
 	return c == '"' || c == '\'' || c == '`';
 }
 
-void Lexer::lex_number(){
+void Lexer::lex_number(){	
 	std::string num;
 	enum {
 		INT, BIN, HEX, FLOAT
@@ -98,6 +98,8 @@ void Lexer::lex_number(){
 			number_type = BIN;
 			advance();
 			num = "0b";
+		}else{
+			num = "0";
 		}
 	}
 
@@ -107,14 +109,17 @@ void Lexer::lex_number(){
 			advance();
 		}
 	}else if(number_type == BIN){
-		while(peek() == '0' || peek() == '1'){
+		if(peek() != '0' || peek() != '1'){
+			unexpected_token();
+		}
+		do{
+			num += peek();
+		}while(peek() == '0' || peek() == '1');
+	}else{
+		while(is_digit(peek())){
 			num += peek();
 			advance();
 		}
-	}else{
-		do{
-			num += peek();
-		}while(is_digit(advance()));
 	}
 
 	// Note: only decimal numbers can be floating
@@ -344,13 +349,14 @@ std::vector <Token> Lexer::lex(const char * path){
 				}
 				case '=':{
 					advance();
-					switch(peek()){
-						case '=':{
-							add_token(OP_EQUAL);
-							advance();
-							break;
-						}
-						default: add_token(OP_ASSIGN); break;
+					if(peek() == '='){
+						add_token(OP_EQUAL);
+						advance();
+					}else if(peek() == '>'){
+						add_token(OP_ARROW);
+						advance();
+					}else{
+						add_token(OP_ASSIGN);
 					}
 					break;
 				}
@@ -412,6 +418,8 @@ std::vector <Token> Lexer::lex(const char * path){
 						if(id == "in"){
 							add_token(OP_NOT_IN);
 							advance();
+						}else if(id == "is"){
+							add_token(OP_NOT_IS);
 						}else{
 							add_token(T_ID, id);
 						}
@@ -525,6 +533,9 @@ std::vector <Token> Lexer::lex(const char * path){
 						if(peek() == '.'){
 							add_token(OP_SPREAD);
 							advance();
+						}else if(peek() == '='){
+							add_token(OP_RANGE_INCL);
+							advance();
 						}else{
 							add_token(OP_RANGE);
 						}
@@ -535,10 +546,7 @@ std::vector <Token> Lexer::lex(const char * path){
 				}
 				case '?':{
 					advance();
-					if(peek() == '?'){
-						add_token(OP_NULL_COALESCING);
-						advance();
-					}else if(peek() == ':'){
+					if(peek() == ':'){
 						add_token(OP_ELVIS);
 						advance();
 					}else{

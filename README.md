@@ -24,43 +24,8 @@ implemented with # or something like that define-style.
 
 - Identifiers = variable names / keywords
 - Operators
-- Quote = `'` / `"`
+- Quote = `'` / `"` / `` ` ``
 - Keyword - identifier determined as keyword
-
-### Identifiers
-Identifiers can contain letters, undersore symbol (`_`) or dollar symbol (`$`)
-
-### Operators
-
-#### List of all operators
-33 `!`
-35 `#` 
-37 `%` 
-38 `&` 
-40 `(` 
-41 `)` 
-42 `*` 
-43 `+` 
-44 `,` 
-45 `-` 
-46 `.` 
-47 `/` 
-58 `:` 
-59 `;` 
-60 `<` 
-61 `=` 
-62 `>` 
-63 `?` 
-64 `@` 
-91 `[` 
-92 `\` 
-93 `]` 
-94 `^` 
-95 `_` 
-123 `{`
-124 `|`
-125 `}`
-126 `~`
 
 ## Helpful links
 [About writing a compiler](https://softwareengineering.stackexchange.com/questions/165543/how-to-write-a-very-basic-compiler)
@@ -76,6 +41,18 @@ Identifiers can contain letters, undersore symbol (`_`) or dollar symbol (`$`)
 - experimental
 - stable
 
+
+## Interpreter structure ????
+
+Nodes have function `eval` that returns `Object`.
+`Object` is the base class for all projections of Nodes.
+`Object` is not a base class of every class in the language like in Java.
+Functions, classes and global are `Scope`.
+`Scope` is the base class for objects that can store functions, variables and etc.
+`Object` children have their special functions to work with values or statement list
+as for variables and functions.
+`Object`'s `eval` method receives `Scope` that is nearest to it in the code.
+`eval` of constants (int, float, string...) return new Object of need type.
 
 ## Notes and Ideas
 
@@ -514,3 +491,5 @@ In Jacy if is an expression, so it can be used like that (same to Kotlin):
 ```
 val x = if(...) // ...
 ```
+
+
